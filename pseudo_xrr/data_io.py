@@ -42,10 +42,13 @@ def load_metadata(yaml_path: str):
     # Paths and data loading
     path_xrr               = meta["paths"]["path_xrr"]
     xrr_datafile           = meta["paths"]["xrr_datafile"]
-    xrr_data               = pd.read_csv(
-        path_xrr + xrr_datafile,
-        delim_whitespace=True
-    )
+    if (path_xrr is None) or (xrr_datafile is None):
+        xrr_data = None
+    else: 
+        xrr_data = pd.read_csv(
+            path_xrr + xrr_datafile,
+            delim_whitespace=True
+            )
 
     path                   = meta["paths"]["path"]
     path_out               = meta["paths"]["path_out"]
@@ -541,8 +544,6 @@ def conversion_to_reflectivity(GIXOS, xrr_config):
 
 
 def GIXOS_file_output(GIXOS, xrr_config, metadata, tt_step):
-    print(xrr_config)
-    print(xrr_config["slit_v"])
     xrrfilename = f"{metadata['path_out']}{metadata['sample']}_{metadata['scan'][ metadata['qxy0_select_idx'] ]:05d}_R_PYTHON_TEST.dat" # becomes "instrument_46392_R_PYTHON.dat" - qz and dqz columns are very accurate, but R and dR start off semi-accurate but increasingly deviate after ~15th value
     with open(xrrfilename, 'w') as f:
         f.write(f"# files\n")
