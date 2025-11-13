@@ -134,7 +134,7 @@ def calc_film_DS_RRF_integ(beta_space, qxy0, energy, alpha, Rqxy_HWHM, DSqxy_HWH
         plt.figure(figsize=(8, 5))
         plt.plot(qz_space, DS_RRF / DS_RRF[0], label=f"{label_mode} Qxy₀={qxy0:.3f} Å⁻¹", linewidth=1.5)
         plt.xlabel(r"$Q_z$ [$\AA^{-1}$]", fontsize=12)
-        plt.ylabel(r"DS / (R/R$_F$)", fontsize=12)
+        plt.ylabel(r"R^{*} / (R/R$_F$)", fontsize=12)
         plt.xlim(0, 1.2)
         plt.grid(True)
         plt.legend(loc="upper left", frameon=False)
@@ -155,10 +155,14 @@ def GIXOS_fresnel(Qz, Qc):    # apparently does not limit to 1 like MATLAB code 
 
 
 def GIXOS_dQz(Qz, energy_eV, alpha_i_deg, Ddet_mm, footprint_mm):
+    """
+    footprint induced dQz resolution broadening
+    """
     planck = 1240.4  # eV·nm
     wavelength = planck / energy_eV * 10  # Å
 
-    Qz = np.asarray(Qz).reshape(-1, 1)
+    # Qz = np.asarray(Qz).reshape(-1, 1)
+    # Qz should always be a column vector
     dQz = np.zeros((Qz.shape[0], 6)) # change np.zeros((Qz.shape[0], 5)) to np.zeros((Qz.shape[0], 6)) to match MATLAB output and produce 6 columns
     dQz[:, 0] = Qz[:, 0]
 
@@ -181,11 +185,13 @@ def GIXOS_dQz(Qz, energy_eV, alpha_i_deg, Ddet_mm, footprint_mm):
     return dQz
 
 
-def vineyard_factor(alpha_f_deg, energy_eV, alpha_i_deg):
+def vineyard_factor(alpha_f_deg, energy_eV, alpha_i_deg, qc = 0.0218, beta = 1e-9):
     import numpy as np
+    """
+    modified by Chen
+    move qc and beta as an argument, and beta by default using water value
+    """
     planck = 1240.4  # eV·nm
-    qc = 0.0218
-    beta = 1e-9
     wavelength = planck / energy_eV * 10  # Å
     alpha_c = np.arcsin(qc / (2 * 2 * np.pi / wavelength))
 
