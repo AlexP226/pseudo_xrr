@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 #from p08_GIXD import *
 #from p08_general import *
 
-from pseudo_xrr.gixos import *
+from pseudo_xrr.eCWM import *
 from pseudo_xrr.data_io import *
 #from pseudo_xrr.slit import Rectungular_slit
 #from pseudo_xrr.Dependency import *
@@ -94,15 +94,15 @@ qxy_dependence_predict = GIXOS_qxy_dependence(GIXOS_clean, GIXOS_clean['metadata
 qxy_dependence_fit = GIXOS_qxy_dependence(GIXOS_clean, GIXOS_clean['metadata']['dependency']['qz_selected'], fit_kappa = True)
 
 #%% processing pseudo
-GIXOS_ana = GIXOS2R(GIXOS_clean, use_approx=False)
+GIXOS_ana = GIXOS2R(GIXOS_clean, transmission_corr = True, use_approx=False)
 
 #%%
 # Create the plot
 plt.figure()
-plt.plot(SF_ref[:,0],SF_ref[:,1]/GIXOS_ana["metadata"]["RFscaling"]/ (math.pi / 180) ** 2)
-plt.errorbar(GIXOS_ana["refl"][:,0], GIXOS_ana["refl"][:,1]/GIXOS_ana["fresnel"][:,1]/GIXOS_ana["metadata"]["I0"], GIXOS_ana["refl"][:,2]/GIXOS_ana["fresnel"][:,1]/GIXOS_ana["metadata"]["I0"], fmt ='o', markersize = 1, capsize = 3)
-plt.plot(R_ref[:,0],R_ref[:,1]/(0.0218/2/R_ref[:,0])**4/GIXOS_ana["metadata"]["RFscaling"]/ (math.pi / 180) ** 2 )
-plt.errorbar(GIXOS_ana["SF"][:,0], GIXOS_ana["SF"][:,1]/GIXOS_ana["metadata"]["I0"], GIXOS_ana["SF"][:,2]/GIXOS_ana["metadata"]["I0"], fmt ='o', markersize = 1, capsize = 3)
+plt.plot(SF_ref[:,0],SF_ref[:,1]/GIXOS_ana["metadata"]["RFscaling"]/ (math.pi / 180) ** 2, label = 'matlab structure factor')
+plt.errorbar(GIXOS_ana["refl"][:,0], GIXOS_ana["refl"][:,1]/GIXOS_ana["fresnel"][:,1]/GIXOS_ana["metadata"]["I0"], GIXOS_ana["refl"][:,2]/GIXOS_ana["fresnel"][:,1]/GIXOS_ana["metadata"]["I0"], fmt ='o', markersize = 1, capsize = 3, label = 'pseudoR')
+plt.plot(R_ref[:,0],R_ref[:,1]/(0.0218/2/R_ref[:,0])**4/GIXOS_ana["metadata"]["RFscaling"]/ (math.pi / 180) ** 2, label = 'matlab pseudoR')
+plt.errorbar(GIXOS_ana["SF"][:,0], GIXOS_ana["SF"][:,1]/GIXOS_ana["metadata"]["I0"], GIXOS_ana["SF"][:,2]/GIXOS_ana["metadata"]["I0"], fmt ='o', markersize = 1, capsize = 3, label = 'structure factor')
 # Set log10 scale on the y-axis
 plt.yscale('log')
 # Add labels and title
@@ -115,20 +115,6 @@ plt.show()
 
 #%% test rectangular slit
 xrrqz = GIXOS_ana["refl"][:,0]
-Psi_slit = calc_eCWM_roughness_factor_SP(xrrqz, 
-    energy=14400,
-    sdd=1039.9,
-    resolution_mode=1,
-    resolution=[0.33,0.5],
-    bkg_mode=0,
-    bkg_off= 1,
-    tension=0.038,
-    temp=295,
-    kappa=15,
-    amin=5)
-sigma_slit = np.sqrt(-1/xrrqz**2*np.log(Psi_slit))
-
-#%%
 Psi_slit_approx = calc_eCWM_roughness_factor_SP(xrrqz, 
     energy=14400,
     sdd=1039.9,

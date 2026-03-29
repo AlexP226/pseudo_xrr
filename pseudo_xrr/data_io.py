@@ -10,8 +10,8 @@ from joblib import Parallel, delayed
 from scipy.integrate import dblquad
 from scipy.special import kv as besselk, jv as besselj, gamma
 from p08_GIXD.p08_GIXD import *
-from pseudo_xrr.gixos import bulkbkg_fit, bulkbkg_plot_fit, bulkbkg_predict, GIXOS_fresnel, GIXOS_Tsqr, GIXOS_dQz, calc_eCWM_roughness_factor_DS, calc_eCWM_red_r
-
+from pseudo_xrr.eCWM import calc_fresnel, calc_tbeta_sqr, GIXOS_dQz, calc_eCWM_roughness_factor_DS, calc_eCWM_red_r
+from pseudo_xrr.bulkbkg import bulkbkg_fit, bulkbkg_plot_fit, bulkbkg_predict
 '''
 change oct.2025
 author shenc
@@ -32,7 +32,7 @@ author shenc
 '''
 
 
-# some helping functions
+#%% some helping functions
 def check_keys_numeric(keys, *dicts):
     """
     new function from Chen
@@ -921,25 +921,8 @@ def GIXOS_qxy_dependence(
     # ---- shared model builder ----
     def build_ds_for_kappa(kappa_value):
         ds_cols = []
-        # calc_eCWM_roughness_factor_DS(alpha, beta_space, phi, energy, DSphi_HWHM, DSbeta_HWHM,
-        #                           tension, temp, kappa, amin, use_approx=False):
-        for phi_value in phi:
-            # _, ds_model, _ = calc_film_DS_RRF_integ(
-            #     beta_space[row_index],
-            #     phi_value,
-            #     energy,
-            #     alpha_i,
-            #     2e-4,
-            #     HWtth,
-            #     HWtt * (row_window * 2 + 1),
-            #     tension,
-            #     temperature,
-            #     kappa_value,
-            #     amin,
-            #     use_approx=True,
-            #     show_plot=False
-            # )
-            
+        
+        for phi_value in phi:            
             ds_model = calc_eCWM_roughness_factor_DS(
                 alpha_i,
                 beta_space[row_index],
@@ -1089,60 +1072,6 @@ def GIXOS_qxy_dependence_plot(results, *, show_refs=True, show_err = True, title
 
 
 # processing into SF and RRF
-def eCWM_analysis_old(GIXOS, transmission_corr = False, footprint_effect = False, use_approx = False):
-    """
-    name changed to eCWM analysis
-    use metadata imbedded in the input data, no DSbetaHW
-    input for calc_film_DS_RRF_integ: use DSphi_HW instead of DSqxy_HW, use tth instead of qxy0, use energy in eV instead of keV
-    
-    """
-    GIXOS["fresnel"] = GIXOS_fresnel(GIXOS["Qz"][:,GIXOS["metadata"]["PseudoR"]["qxy0_select_idx"]], GIXOS["metadata"]["sample_params"]["Qc"]) # check if fresnel == GIXOS_fresnel      SAME
-    #GIXOS["Qz_array"] = np.asarray(GIXOS ["Qz"]).reshape(-1, 1) # done to convert GIXOS ["Qz"] from a row vetor to a column vector for GIXOS_Tsqr
-    # Qz should always be a column vector!
-    if footprint_effect and ("footprint" in GIXOS["metadata"]["instrument"]) and ("Ddet" in GIXOS["metadata"]["instrument"]) and ("alpha_i" in GIXOS["metadata"]["instrument"]) and ("energy" in GIXOS["metadata"]["instrument"]):
-        GIXOS["dQz"] = GIXOS_dQz(GIXOS["Qz"][:,GIXOS["metadata"]["PseudoR"]["qxy0_select_idx"]], GIXOS["metadata"]["instrument"]["energy"], GIXOS["metadata"]["instrument"]["alpha_i"], GIXOS["metadata"]["instrument"]["Ddet"], GIXOS["metadata"]["instrument"]["footprint"])     # Almost same, just not iterating through enough times(?) --> missing last row      SAME now
-    else:
-        GIXOS["dQz"] = np.ones((len(GIXOS["tt"]),5))
-        print("No footprint broadending calculation. For calculation: please set footprint_effect = True and provide the footprint [mm], detector distance Ddet [mm], incident angle alpha_i [deg] and energy [eV] in metadata field")
-        
-    if transmission_corr and ("Ddet" in GIXOS["metadata"]["instrument"]) and ("alpha_i" in GIXOS["metadata"]["instrument"]) and ("energy" in GIXOS["metadata"]["instrument"]):
-        if footprint_effect and ("footprint" in GIXOS["metadata"]["instrument"]):
-            GIXOS["transmission"] = GIXOS_Tsqr(GIXOS["Qz"][:,GIXOS["metadata"]["PseudoR"]["qxy0_select_idx"]], GIXOS["metadata"]["sample_params"]["Qc"], GIXOS["metadata"]["instrument"]["energy"], GIXOS["metadata"]["instrument"]["alpha_i"], GIXOS["metadata"]["instrument"]["Ddet"], GIXOS["metadata"]["instrument"]["footprint"])  #  Mostly the same, but the 4th column starts to deviate from the MATLAB output by hundredths
-        else:
-            GIXOS["transmission"] = GIXOS_Tsqr(GIXOS["Qz"][:,GIXOS["metadata"]["PseudoR"]["qxy0_select_idx"]], GIXOS["metadata"]["sample_params"]["Qc"], GIXOS["metadata"]["instrument"]["energy"], GIXOS["metadata"]["instrument"]["alpha_i"], GIXOS["metadata"]["instrument"]["Ddet"], 0.1)  #  Mostly the same, but the 4th column starts to deviate from the MATLAB output by hundredths
-    else:
-        GIXOS["transmission"] = np.ones((len(GIXOS["tt"]),4))
-        print("no transmission correction. For correction: please set the transmission_corr = True and provide the detector distance Ddet [mm], incident angle alpha_i [deg] and energy [eV] in metadata field")
-    
-    if len(GIXOS["HWtt"])>1:
-        DSbetaHW = GIXOS["HWtt"][GIXOS["metadata"]["PseudoR"]["qxy0_select_idx"]]
-        DSphiHW = GIXOS["HWtth"][0,GIXOS["metadata"]["PseudoR"]["qxy0_select_idx"]]
-    else:
-        DSbetaHW = GIXOS["HWtt"][0]
-        DSphiHW = GIXOS["HWtth"][0,0]
-    GIXOS["DS_RRF_integ"], GIXOS["DS_term_integ"], GIXOS["RRF_term_integ"] = calc_film_DS_RRF_integ(GIXOS["tt"], GIXOS["tth"][0,GIXOS["metadata"]["PseudoR"]["qxy0_select_idx"]], GIXOS["metadata"]["instrument"]["energy"], GIXOS["metadata"]["instrument"]["alpha_i"], GIXOS["metadata"]["PseudoR"]["RqxyHW"], DSphiHW, DSbetaHW, GIXOS["metadata"]["sample_params"]["tension"], GIXOS["metadata"]["sample_params"]["temperature"], GIXOS["metadata"]["sample_params"]["kappa"], GIXOS["metadata"]["sample_params"]["amin"], use_approx=use_approx)
-    # DS = Diffuse Scatter; RRF = Specular Reflectivity Normalized by Fresnel Reflectivity
-    # Approx form is derived from Taylor expansion, which is dependent on being close to 0 angle --> higher deviations at high angles
-
-    # computes reflectivity
-    GIXOS["refl"] = np.column_stack([
-        GIXOS["Qz"][:,GIXOS["metadata"]["PseudoR"]["qxy0_select_idx"]],
-        GIXOS["Intensity"][:,GIXOS["metadata"]["PseudoR"]["qxy0_select_idx"]] / GIXOS["DS_RRF_integ"] * GIXOS["fresnel"][:, 1] / GIXOS["transmission"][:, 3],
-        GIXOS["error"][:,GIXOS["metadata"]["PseudoR"]["qxy0_select_idx"]] / GIXOS["DS_RRF_integ"] * GIXOS["fresnel"][:, 1] / GIXOS["transmission"][:, 3],
-        GIXOS["dQz"][:, 4]
-    ])
-
-    # computes structure factor 
-    GIXOS["SF"] = np.column_stack([
-        GIXOS["Qz"][:,GIXOS["metadata"]["PseudoR"]["qxy0_select_idx"]],
-        GIXOS["Intensity"][:,GIXOS["metadata"]["PseudoR"]["qxy0_select_idx"]] / GIXOS["DS_term_integ"] / GIXOS["transmission"][:, 3],
-        GIXOS["error"][:,GIXOS["metadata"]["PseudoR"]["qxy0_select_idx"]] / GIXOS["DS_term_integ"] / GIXOS["transmission"][:, 3],
-        GIXOS["dQz"][:, 4]
-    ])
-    return GIXOS # outputs GIXOS with reflectivity and structure factor added as new columns
-
-
-# processing into SF and RRF
 def GIXOS2R(GIXOS, transmission_corr = False, footprint_effect = False, use_approx = False):
     """
     name changed to GIXOS2R
@@ -1150,8 +1079,8 @@ def GIXOS2R(GIXOS, transmission_corr = False, footprint_effect = False, use_appr
     input for calc_film_DS_RRF_integ: use DSphi_HW instead of DSqxy_HW, use tth instead of qxy0, use energy in eV instead of keV
     
     """
-    GIXOS["fresnel"] = GIXOS_fresnel(GIXOS["Qz"][:,GIXOS["metadata"]["PseudoR"]["qxy0_select_idx"]], GIXOS["metadata"]["sample_params"]["Qc"]) # check if fresnel == GIXOS_fresnel      SAME
-    #GIXOS["Qz_array"] = np.asarray(GIXOS ["Qz"]).reshape(-1, 1) # done to convert GIXOS ["Qz"] from a row vetor to a column vector for GIXOS_Tsqr
+    GIXOS["fresnel"] = calc_fresnel(GIXOS["Qz"][:,GIXOS["metadata"]["PseudoR"]["qxy0_select_idx"]], GIXOS["metadata"]["sample_params"]["Qc"]) # check if fresnel == calc_fresnel      SAME
+    #GIXOS["Qz_array"] = np.asarray(GIXOS ["Qz"]).reshape(-1, 1) # done to convert GIXOS ["Qz"] from a row vetor to a column vector for calc_tbeta_sqr
     # Qz should always be a column vector!
     if footprint_effect and ("footprint" in GIXOS["metadata"]["instrument"]) and ("Ddet" in GIXOS["metadata"]["instrument"]) and ("alpha_i" in GIXOS["metadata"]["instrument"]) and ("energy" in GIXOS["metadata"]["instrument"]):
         GIXOS["dQz"] = GIXOS_dQz(GIXOS["Qz"][:,GIXOS["metadata"]["PseudoR"]["qxy0_select_idx"]], GIXOS["metadata"]["instrument"]["energy"], GIXOS["metadata"]["instrument"]["alpha_i"], GIXOS["metadata"]["instrument"]["Ddet"], GIXOS["metadata"]["instrument"]["footprint"])     # Almost same, just not iterating through enough times(?) --> missing last row      SAME now
@@ -1161,9 +1090,9 @@ def GIXOS2R(GIXOS, transmission_corr = False, footprint_effect = False, use_appr
         
     if transmission_corr and ("Ddet" in GIXOS["metadata"]["instrument"]) and ("alpha_i" in GIXOS["metadata"]["instrument"]) and ("energy" in GIXOS["metadata"]["instrument"]):
         if footprint_effect and ("footprint" in GIXOS["metadata"]["instrument"]):
-            GIXOS["transmission"] = GIXOS_Tsqr(GIXOS["Qz"][:,GIXOS["metadata"]["PseudoR"]["qxy0_select_idx"]], GIXOS["metadata"]["sample_params"]["Qc"], GIXOS["metadata"]["instrument"]["energy"], GIXOS["metadata"]["instrument"]["alpha_i"], GIXOS["metadata"]["instrument"]["Ddet"], GIXOS["metadata"]["instrument"]["footprint"])  #  Mostly the same, but the 4th column starts to deviate from the MATLAB output by hundredths
+            GIXOS["transmission"] = calc_tbeta_sqr(GIXOS["tt"], GIXOS["metadata"]["sample_params"]["Qc"], GIXOS["metadata"]["instrument"]["energy"], GIXOS["metadata"]["instrument"]["alpha_i"], GIXOS["metadata"]["instrument"]["Ddet"], GIXOS["metadata"]["instrument"]["footprint"])  #  Mostly the same, but the 4th column starts to deviate from the MATLAB output by hundredths
         else:
-            GIXOS["transmission"] = GIXOS_Tsqr(GIXOS["Qz"][:,GIXOS["metadata"]["PseudoR"]["qxy0_select_idx"]], GIXOS["metadata"]["sample_params"]["Qc"], GIXOS["metadata"]["instrument"]["energy"], GIXOS["metadata"]["instrument"]["alpha_i"], GIXOS["metadata"]["instrument"]["Ddet"], 0.1)  #  Mostly the same, but the 4th column starts to deviate from the MATLAB output by hundredths
+            GIXOS["transmission"] = calc_tbeta_sqr(GIXOS["tt"], GIXOS["metadata"]["sample_params"]["Qc"], GIXOS["metadata"]["instrument"]["energy"], GIXOS["metadata"]["instrument"]["alpha_i"], GIXOS["metadata"]["instrument"]["Ddet"], 0.1)  #  Mostly the same, but the 4th column starts to deviate from the MATLAB output by hundredths
     else:
         GIXOS["transmission"] = np.ones((len(GIXOS["tt"]),4))
         print("no transmission correction. For correction: please set the transmission_corr = True and provide the detector distance Ddet [mm], incident angle alpha_i [deg] and energy [eV] in metadata field")

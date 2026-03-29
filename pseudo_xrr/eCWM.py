@@ -1,4 +1,4 @@
-# ~~~  Chen Shen Functions: ~~~     # can paste functions into a separate py file and import
+# -*- coding: utf-8 -*-
 import numpy as np
 import matplotlib.pyplot as plt
 import scipy
@@ -17,196 +17,9 @@ calc_film_DS_RRF_integ: input DSqxy_HWHM changes to DSphi_HWHM
 film_integral_delta_beta_delta_phi: merge with the approx together
 """
 
-def bulkbkg_model(x, y0, F, t):
-    """
-    bulk bkg: offset exponential model
-
-    Parameters
-    ----------
-    x : numpy array, Q
-
-    Returns
-    -------
-    numpy array
-        y0 + F * np.exp(x / t).
-
-    """
-    return y0 + F * np.exp(x / t)
-
-def bulkbkg_is_nearly_constant(y, rtol=1e-3):
-    """
-    function to determine if the bkg is nearly a constant
-
-    Parameters
-    ----------
-    y : TYPE
-        DESCRIPTION.
-    rtol : TYPE, optional
-        DESCRIPTION. The default is 1e-3.
-
-    Returns
-    -------
-    TYPE
-        DESCRIPTION.
-
-    """
-    mu = float(np.mean(y))
-    return float(np.std(y)) < rtol * max(abs(mu), 1.0)
-
-def bulkbkg_fit(
-    x, y,
-    *,
-    # positivity + optional physics bounds
-    y0_bounds=(1e-12, np.inf),
-    F_bounds=(1e-12, np.inf),
-    t_bounds=(1e-12, np.inf),
-    # prior for y0 initial guess (only affects start point, not the final fit unless you also bound y0)
-    y0_clip_for_init=(200.0, 2000.0),
-    nearly_constant_rtol=1e-3,
-    allow_fit_even_if_flat=True,
-    # prevent runaway t (set None to disable)
-    t_upper_multiple_of_span=200.0,
-    maxfev=200000,
-    # plot fit
-    plot_fit=False,
-    ):
-    """
-    Fit y = y0 + F * exp(x/t) with y0,F,t > 0 (by default).
-
-    Returns a dict with:
-      ok (bool), popt ([y0,F,t]), pcov, x, y, y_fit, flat (bool), message (str)
-    """
-    x = np.asarray(x, dtype=float).ravel()
-    y = np.asarray(y, dtype=float).ravel()
-
-    if x.size != y.size:
-        raise ValueError(f"x and y must have same length; got {x.size} and {y.size}")
-    if x.size < 3:
-        raise ValueError("Need at least 3 points to fit.")
-
-    # sort by x (helps stability; doesn't change the fit)
-    idx = np.argsort(x)
-    x = x[idx]
-    y = y[idx]
-
-    # flat-ish detection
-    flat = bulkbkg_is_nearly_constant(y, rtol=nearly_constant_rtol)
-    if flat and not allow_fit_even_if_flat:
-        y0 = float(np.mean(y))
-        popt = np.array([y0, 0.0, np.nan], dtype=float)
-        return {
-            "ok": True,
-            "flat": True,
-            "popt": popt,
-            "pcov": np.full((3, 3), np.inf),
-            "x": x,
-            "y": y,
-            "y_fit": np.full_like(y, y0, dtype=float),
-            "message": "Nearly constant data: returned y0=mean(y), F=0, t=nan",
-        }
-
-    # shift x for numerical stability, then map F back (keeps same y0, t; adjusts F)
-    x0 = float(np.min(x))
-    xs = x - x0
-    span = float(np.max(xs) - np.min(xs))
-
-    # initial guesses
-    y0_guess = float(np.clip(np.percentile(y, 10), y0_clip_for_init[0], y0_clip_for_init[1]))
-    F_guess  = float(max(np.max(y) - y0_guess, 1e-12))
-    t_guess  = float(max(span / 5.0, 1e-12))
-    p0 = (y0_guess, F_guess, t_guess)
-
-    # bounds (in shifted-x parameterization)
-    lo = (y0_bounds[0], F_bounds[0], t_bounds[0])
-    hi = (y0_bounds[1], F_bounds[1], t_bounds[1])
-
-    # optional cap on t to avoid runaway in weakly-informative/flat-ish cases
-    if t_upper_multiple_of_span is not None and np.isfinite(span) and span > 0:
-        hi = (hi[0], hi[1], min(hi[2], t_upper_multiple_of_span * span))
-
-    try:
-        popt_s, pcov = curve_fit(
-            bulkbkg_model, xs, y,
-            p0=p0,
-            bounds=(lo, hi),
-            maxfev=maxfev
-        )
-
-        # Map back to original x:
-        # y = y0 + F_s*exp((x-x0)/t) = y0 + (F_s*exp(-x0/t))*exp(x/t)
-        y0, F_s, t = [float(v) for v in popt_s]
-        F = float(F_s * np.exp(-x0 / t))
-        popt = np.array([y0, F, t], dtype=float)
-
-        y_fit = bulkbkg_model(x, *popt)
-
-        # If you want to see if the fit is "stable-ish", these flags help:
-        msg = "Fit succeeded"
-        if flat:
-            msg += " (data flagged nearly-constant)"
-        if span > 0 and np.isfinite(t) and t > 50.0 * span:
-            msg += " (warning: t very large vs x-span)"
-        if np.isfinite(F) and F < 1e-3 * max(abs(np.mean(y)), 1.0):
-            msg += " (warning: F ~ 0)"
-
-        return {
-            "ok": True,
-            "flat": flat,
-            "popt": popt,
-            "pcov": pcov,
-            "x": x,
-            "y": y,
-            "y_fit": y_fit,
-            "message": msg,
-        }
-
-    except Exception as e:
-        return {
-            "ok": False,
-            "flat": flat,
-            "popt": np.array([np.nan, np.nan, np.nan], dtype=float),
-            "pcov": np.full((3, 3), np.nan),
-            "x": x,
-            "y": y,
-            "y_fit": np.full_like(y, np.nan, dtype=float),
-            "message": f"Fit failed: {type(e).__name__}: {e}",
-        }
-
-def bulkbkg_plot_fit(result, *, ax=None):
-    """
-    Optional helper: plot data + fit for the output dict of fit_exp_offset_xy.
-    """
-    if ax is None:
-        fig, ax = plt.subplots(figsize=(7, 4.2))
-
-    ax.plot(result["x"], result["y"], ".", label="data")
-
-    if result["ok"]:
-        ax.plot(result["x"], result["y_fit"], "-", linewidth=2, label="fit")
-        y0, F, t = result["popt"]
-        ax.set_title(f"y0={y0:.4g}, F={F:.4g}, t={t:.4g}")
-    else:
-        ax.set_title(result["message"])
-
-    ax.set_xlabel("x")
-    ax.set_ylabel("y")
-    ax.legend()
-    return ax    
-
-def bulkbkg_predict(Q, params):
-    """
-    Predict bulkbkg intensity from params = [y0, F, t].
-    If t is NaN/inf or F is ~0, returns y ~ y0 (flat-line fallback).
-    Q is a 2D array, and will return a 2D array
-    """
-    x_new = np.asarray(Q, dtype=float)
-    y0, F, t = [float(v) for v in params]
-
-    # Flat/degenerate fallback
-    if (not np.isfinite(t)) or (not np.isfinite(F)) or (abs(F) < 1e-15):
-        return np.full_like(x_new, y0, dtype=float)
-
-    return y0 + F * np.exp(x_new / t)
+# -------------------------------------------------------------
+# extended capillary wave model : roughness factor calculation
+# -------------------------------------------------------------
 
 def eCWM_correlation_integrand_replacement(r, qxy, eta, Lk, amin): # Changes made
     Lk = np.maximum(Lk, 0.001)  # safeguard for divide-by-zero. Qk = 1000 when Lk = 0.001 therefore is irelevant
@@ -1198,9 +1011,46 @@ def calc_eCWM_red_r(beta_space, phi, energy, alpha, Rqxy_HWHM, DSphi_HWHM, DSbet
     return r_red, eCWM_Psi_DS, eCWM_Psi_R
 
 
-# -------------------- CLI -------------------- #
+# ---------------------------------------------------------------
+# surface scattering optics
+# ---------------------------------------------------------------
 
-def GIXOS_fresnel(Qz, Qc):    # apparently does not limit to 1 like MATLAB code does - see AI
+def calc_fresnel(Qz, Qc):    
+    """
+    Calculate the Fresnel reflectivity for a given Qz.
+    
+    This function evaluates the Fresnel reflectivity R_F(Qz) for an ideal,
+    flat interface using the standard optical expression for the reflection
+    coefficient.
+    
+    The calculation supports complex values of Qz internally, allowing
+    correct handling below the critical angle where total external reflection
+    occurs.
+    
+    Parameters
+    ----------
+    Qz : array-like
+        Momentum transfer perpendicular to the surface [1/Å].
+    
+    Qc : float
+        Critical momentum transfer [1/Å], related to the electron density
+        contrast of the interface.
+    
+    Returns
+    -------
+    result : ndarray
+        Two-column array:
+        - column 0: Qz values (real part)
+        - column 1: Fresnel reflectivity R_F(Qz)
+    
+    Notes
+    -----
+    - The reflectivity is calculated as |r|^2, where r is the Fresnel
+      reflection coefficient.
+    - For Qz < Qc, the square root becomes complex, corresponding to total
+      reflection.
+    
+    """
     Qz = np.asarray(Qz, dtype=np.complex128)  # allow complex arithmetic
     sqrt_term = np.sqrt(Qz**2 - Qc**2)        # may be complex when Qz < Qc
     r = (Qz - sqrt_term) / (Qz + sqrt_term)   # reflection coefficient
@@ -1208,9 +1058,51 @@ def GIXOS_fresnel(Qz, Qc):    # apparently does not limit to 1 like MATLAB code 
     return np.column_stack((Qz.real, refl))   # return Qz as real part only
 
 
-def GIXOS_dQz(Qz, energy_eV, alpha_i_deg, Ddet_mm, footprint_mm):
+def GIXOS_dQz(Qz, energy_eV, alpha_deg, Ddet_mm, footprint_mm):
     """
-    footprint induced dQz resolution broadening
+    Calculate Qz resolution broadening due to beam footprint.
+
+    This function evaluates the broadening of Qz caused by the finite beam
+    footprint on the sample surface in a GIXOS (grazing-incidence x-ray
+    off-specular scattering) geometry.
+
+    The footprint leads to an angular spread in the exit angle beta,
+    which translates into a spread in Qz.
+
+    Parameters
+    ----------
+    Qz : ndarray
+        Array of shape (n,1) containing Qz values [1/Å].
+
+    energy_eV : float
+        X-ray energy in eV.
+
+    alpha_deg : float
+        Incident angle in degrees.
+
+    Ddet_mm : float
+        Sample-to-detector distance in mm.
+
+    footprint_mm : float
+        Beam footprint size on the sample in mm.
+
+    Returns
+    -------
+    dQz : ndarray
+        Array of shape (n,6) with columns:
+        - column 0: Qz
+        - column 1: central exit angle beta (deg)
+        - column 2: maximum exit angle beta_max (deg)
+        - column 3: minimum exit angle beta_min (deg)
+        - column 4: delta_Qz (half-width of Qz broadening)
+        - column 5: relative broadening delta_Qz / Qz
+
+    Notes
+    -----
+    - The calculation assumes geometrical broadening from footprint effects.
+    - The angular spread is converted into Qz spread using standard
+      kinematic relations.
+
     """
     planck = 12400  # eV·A
     wavelength = planck / energy_eV  # Å
@@ -1220,89 +1112,184 @@ def GIXOS_dQz(Qz, energy_eV, alpha_i_deg, Ddet_mm, footprint_mm):
     dQz = np.zeros((Qz.shape[0], 6)) # change np.zeros((Qz.shape[0], 5)) to np.zeros((Qz.shape[0], 6)) to match MATLAB output and produce 6 columns
     dQz[:, 0] = Qz[:, 0]
 
-    alpha_i_rad = np.radians(alpha_i_deg)
-    alpha_f_center = np.degrees(np.arcsin(Qz[:, 0] * wavelength / (2 * pi) - np.sin(alpha_i_rad)))
-    alpha_f_max = np.degrees(np.arctan(np.tan(np.radians(alpha_f_center)) * Ddet_mm / (Ddet_mm - footprint_mm)))
-    alpha_f_min = np.degrees(np.arctan(np.tan(np.radians(alpha_f_center)) * Ddet_mm / (Ddet_mm + footprint_mm)))
+    alpha_rad = np.radians(alpha_deg)
+    beta_center = np.degrees(np.arcsin(Qz[:, 0] * wavelength / (2 * pi) - np.sin(alpha_rad)))
+    beta_max = np.degrees(np.arctan(np.tan(np.radians(beta_center)) * Ddet_mm / (Ddet_mm - footprint_mm)))
+    beta_min = np.degrees(np.arctan(np.tan(np.radians(beta_center)) * Ddet_mm / (Ddet_mm + footprint_mm)))
 
     factor = (2 * pi) / wavelength
-    qz_max = (np.sin(np.radians(alpha_f_max)) + np.sin(alpha_i_rad)) * factor
-    qz_min = (np.sin(np.radians(alpha_f_min)) + np.sin(alpha_i_rad)) * factor
+    qz_max = (np.sin(np.radians(beta_max)) + np.sin(alpha_rad)) * factor
+    qz_min = (np.sin(np.radians(beta_min)) + np.sin(alpha_rad)) * factor
     delta_qz = 0.5 * (qz_max - qz_min)
 
-    dQz[:, 1] = alpha_f_center
-    dQz[:, 2] = alpha_f_max
-    dQz[:, 3] = alpha_f_min
+    dQz[:, 1] = beta_center
+    dQz[:, 2] = beta_max
+    dQz[:, 3] = beta_min
     dQz[:, 4] = delta_qz
     dQz[:, 5] = dQz[:, 4] / dQz[:, 0] # added to match MATLAB output and create new column
 
     return dQz
 
 
-def vineyard_factor(alpha_f_deg, energy_eV, alpha_i_deg, qc = 0.0218, beta = 1e-9):
-    import numpy as np
+def t_sqr(angle_deg, energy_eV, qc = 0.0218, beta = 1e-9):
     """
-    modified by Chen
-    move qc and beta as an argument, and beta by default using water value
+    Calculate the transmission coefficient squared |t|^2.
+
+    This function evaluates the squared transmission coefficient for x-rays
+    incident on a surface, based on the Fresnel transmission amplitude.
+
+    It accounts for absorption via a small imaginary component beta in the
+    refractive index.
+
+    Parameters
+    ----------
+    angle_deg : float or array-like
+        Incident or exit angle in degrees.
+
+    energy_eV : float
+        X-ray energy in eV.
+
+    qc : float, optional
+        Critical momentum transfer [1/Å]. Default corresponds to water.
+
+    beta : float, optional
+        Imaginary part of refractive index (absorption term).
+        Default is 1e-9.
+
+    Returns
+    -------
+    T : ndarray or float
+        Transmission coefficient squared |t|^2.
+
+    Notes
+    -----
+    - For angles below the critical angle, transmission is suppressed.
+    - The function supports both scalar and array inputs.
+
     """
     planck = 12400  # eV·A
     wavelength = planck / energy_eV  # Å
-    alpha_c = np.arcsin(qc / (2 * 2 * pi / wavelength))
-
-    alpha_i_rad = np.radians(alpha_i_deg)
-    alpha_f_rad = np.radians(alpha_f_deg)
-
-    li_term = (alpha_c**2 - alpha_i_rad**2)**2 + (2 * beta)**2
-    l_i = 1 / np.sqrt(2) * np.sqrt(alpha_c**2 - alpha_i_rad**2 + np.sqrt(li_term))
-
-    x = alpha_f_deg / np.degrees(alpha_c)
-
+    alpha_c_rad = np.arcsin(qc / (2 * 2 * pi / wavelength))
+    angle_rad = np.radians(angle_deg)
+    x = angle_rad / alpha_c_rad
     # Handle both scalar and array cases
     T = np.zeros_like(x, dtype=np.float64)
-    l_f = np.zeros_like(x, dtype=np.float64)
     mask = x > 0
     if np.any(mask):
-        T[mask] = np.abs(2 * x[mask] / (x[mask] + np.sqrt(x[mask]**2 - 1 - 2j * beta / alpha_c**2)))**2
-        lf_term = (alpha_c**2 - alpha_f_rad[mask]**2)**2 + (2 * beta)**2
-        l_f[mask] = 1 / np.sqrt(2) * np.sqrt(alpha_c**2 - alpha_f_rad[mask]**2 + np.sqrt(lf_term))
+        T[mask] = np.abs(2 * x[mask] / (x[mask] + np.sqrt(x[mask]**2 - 1 - 2j * beta / alpha_c_rad**2)))**2
 
-    normalization = wavelength / (2 * pi) / l_i
-    vf = (wavelength / (2 * pi)) * T / (l_f + l_i) / normalization
-    return vf
+    return T
 
 
-def vf_length_corr(alpha_fc_deg, length_mm, energy_eV, alpha_i_deg, Ddet_mm):
-    tan_alpha_fc = np.tan(np.radians(alpha_fc_deg))
-    alpha_f_rad = np.arctan((Ddet_mm * tan_alpha_fc) / (Ddet_mm - length_mm))
-    alpha_f_deg = np.degrees(alpha_f_rad)
-    return vineyard_factor(alpha_f_deg, energy_eV, alpha_i_deg)
+def ave_tbeta_sqr(beta_c_deg, footprint_mm, energy_eV, Ddet_mm, qc=0.0218):
+    """
+    Calculate averaged transmission coefficient squared over footprint.
 
+    This function evaluates the average transmission coefficient squared
+    |t_beta|^2 over the illuminated footprint on the detector, taking into
+    account the angular variation caused by finite beam size.
 
-def ave_vf(alpha_fc_deg, footprint_mm, energy_eV, alpha_i_deg, Ddet_mm):
+    Parameters
+    ----------
+    beta_c_deg : float or array-like
+        Central exit angle beta in degrees.
+
+    footprint_mm : float
+        Beam footprint size in mm.
+
+    energy_eV : float
+        X-ray energy in eV.
+
+    Ddet_mm : float
+        Sample-to-detector distance in mm.
+
+    qc : float, optional
+        Critical momentum transfer [1/Å]. Default corresponds to water.
+
+    Returns
+    -------
+    result : float or ndarray
+        Averaged transmission coefficient squared |t_beta|^2.
+        Returns a scalar for scalar input and a 1D array for array input.
+    """
+    scalar_input = np.ndim(beta_c_deg) == 0
+    beta_c = np.asarray(beta_c_deg, dtype=float).ravel()   # shape (n,)
+
     step = int(np.floor(footprint_mm / 5))
-    offsets = np.linspace(-5 * step / 2, 5 * step / 2, step + 1)
-    offsets = offsets[:, np.newaxis] if np.ndim(alpha_fc_deg) > 0 else offsets
-    alpha_fc = np.asarray(alpha_fc_deg)
-    alpha_fc = alpha_fc[np.newaxis, :] if alpha_fc.ndim == 1 else alpha_fc
+    offsets = np.linspace(-5 * step / 2, 5 * step / 2, step + 1, dtype=float)  # shape (m,)
 
-    # Broadcast offsets with alpha_fc
-    offset_grid, alpha_grid = np.meshgrid(offsets.squeeze(), alpha_fc.squeeze(), indexing='ij')
-    alpha_f_rad = np.arctan((Ddet_mm * np.tan(np.radians(alpha_grid))) / (Ddet_mm - offset_grid))
-    alpha_f_deg = np.degrees(alpha_f_rad)
-    vf_vals = vineyard_factor(alpha_f_deg, energy_eV, alpha_i_deg)
-    return np.mean(vf_vals, axis=0) if vf_vals.ndim > 1 else np.mean(vf_vals)
+    # Broadcast to shape (m, n):
+    # rows = footprint offsets, columns = beta points
+    offset_grid = offsets[:, None]
+    beta_grid = beta_c[None, :]
+
+    beta_rad = np.arctan(
+        (Ddet_mm * np.tan(np.radians(beta_grid))) / (Ddet_mm - offset_grid)
+    )
+    beta_deg = np.degrees(beta_rad)
+
+    tbeta_sqr_vals = t_sqr(beta_deg, energy_eV, qc=qc)   # shape (m, n)
+    result = np.mean(tbeta_sqr_vals, axis=0)             # shape (n,)
+
+    return float(result[0]) if scalar_input else result
 
 
-def GIXOS_Tsqr(Qz_array, Qc, energy_eV, alpha_i_deg, Ddet_mm, footprint_mm):
-    planck = 12400
-    wavelength = planck / energy_eV  # [Å]
-    Qz_array = np.atleast_2d(Qz_array)
-    Tsqr = np.zeros((Qz_array.shape[0], 4))
-    Tsqr[:, 0] = Qz_array[:, 0]
+def calc_tbeta_sqr(beta_array, qc, energy_eV, alpha_i_deg, Ddet_mm, footprint_mm):
+    """
+    Calculate transmission-related quantities as a function of beta.
 
-    alpha_f = np.degrees(np.arcsin(Qz_array[:, 0] / (2 * pi) * wavelength - np.sin(np.radians(alpha_i_deg))))
-    alpha_c = np.degrees(np.arcsin(Qc / (2 * 2 * pi / wavelength)))
-    Tsqr[:, 1] = alpha_f
-    Tsqr[:, 2] = alpha_f / alpha_c
-    Tsqr[:, 3] = ave_vf(alpha_f, footprint_mm, energy_eV, alpha_i_deg, Ddet_mm)
-    return Tsqr
+    This function computes several quantities related to the transmission
+    coefficient for a range of exit angles beta.
+
+    The output includes Qz, beta, normalized beta, and the averaged
+    transmission coefficient squared.
+
+    Parameters
+    ----------
+    beta_array : array-like
+        One-dimensional array of exit angles beta in degrees.
+
+    qc : float
+        Critical momentum transfer [1/Å].
+
+    energy_eV : float
+        X-ray energy in eV.
+
+    alpha_i_deg : float
+        Incident angle in degrees.
+
+    Ddet_mm : float
+        Sample-to-detector distance in mm.
+
+    footprint_mm : float
+        Beam footprint size in mm.
+
+    Returns
+    -------
+    tsqr : ndarray
+        Array of shape (n,4) with columns:
+        - column 0: Qz [1/Å]
+        - column 1: beta (deg)
+        - column 2: beta / alpha_c (dimensionless)
+        - column 3: averaged |t_beta|^2
+    """
+    planck = 12400.0
+    wavelength = planck / energy_eV  # Å
+
+    # force 1D input so output is always (n, 4)
+    beta_array = np.asarray(beta_array, dtype=float).ravel()
+
+    # tsqr has four columns: qz, beta, beta/alpha_c, |t_beta|^2
+    tsqr = np.zeros((beta_array.shape[0], 4), dtype=float)
+
+    tsqr[:, 0] = (2 * pi / wavelength) * (
+        np.sin(np.radians(alpha_i_deg)) + np.sin(np.radians(beta_array))
+    )
+
+    alpha_c = np.degrees(np.arcsin(qc / (2 * 2 * pi / wavelength)))
+
+    tsqr[:, 1] = beta_array
+    tsqr[:, 2] = beta_array / alpha_c
+    tsqr[:, 3] = ave_tbeta_sqr(beta_array, footprint_mm, energy_eV, Ddet_mm, qc=qc)
+
+    return tsqr
