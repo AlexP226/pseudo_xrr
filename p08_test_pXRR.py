@@ -29,34 +29,35 @@ SF_ref = np.loadtxt(SF_file, skiprows=29)
 R_ref = np.loadtxt(R_file, skiprows=28)
 
 #%% routine 1: load metadata and data separately, and extract the GIXOS
-metadata = load_metadata('./testing_data/p08test_gixos_metadata.yaml')
-datafileprefix = metadata['measurements']['sample']+'_{:05d}'.format(metadata['measurements']['scan'])+'_angle'
-GIXSdata = load_data(datafileprefix, metadata['paths']['gixs_path'], datatype=metadata['datatype'])
-bkgfileprefix = metadata['measurements']['bkgsample']+'_{:05d}'.format(metadata['measurements']['bkgscan'])+'_angle'
-GIXSbkg = load_data(bkgfileprefix, metadata['paths']['gixs_path'],  datatype=metadata['datatype'])
-#%% geometric correction since my GIXS rebinning did not have this correction
-GIXSdata = geometrical_corr(GIXSdata, Ddet = metadata["instrument"]["Ddet"], det_px = metadata["instrument"]["pixel"], HWtth =  GIXSdata["HWtth"][0,0], HWtt =  GIXSdata["HWtt"][0])
-GIXSbkg = geometrical_corr(GIXSbkg, Ddet = metadata["instrument"]["Ddet"], det_px = metadata["instrument"]["pixel"], HWtth = GIXSbkg["HWtth"][0,0], HWtt =  GIXSbkg["HWtt"][0])
-GIXOSdata = extract_1dGIXOS(GIXSdata, metadata['tth'], HWpx_h = metadata['DSpxHW'])
-GIXOSbkg = extract_1dGIXOS(GIXSbkg, metadata['tth'], HWpx_h = metadata['DSpxHW'])
-#% still need to populate metadata with instrument, sample parameters, and so on for th2q, bkg correction, eCWM analysis
-GIXOSdata['metadata'] = metadata
-GIXOSbkg['metadata'] = metadata
-# #% if metadata is entered manually for further processing
+# metadata = load_metadata('./testing_data/p08test_gixos_metadata.yaml')
+# datafileprefix = metadata['measurements']['sample']+'_{:05d}'.format(metadata['measurements']['scan'])+'_angle'
+# GIXSdata = load_data(datafileprefix, metadata['paths']['gixs_path'], datatype=metadata['datatype'])
+# bkgfileprefix = metadata['measurements']['bkgsample']+'_{:05d}'.format(metadata['measurements']['bkgscan'])+'_angle'
+# GIXSbkg = load_data(bkgfileprefix, metadata['paths']['gixs_path'],  datatype=metadata['datatype'])
+# #%% geometric correction since my GIXS rebinning did not have this correction
+# GIXSdata = geometrical_corr(GIXSdata, Ddet = metadata["instrument"]["Ddet"], det_px = metadata["instrument"]["pixel"], HWtth =  GIXSdata["HWtth"][0,0], HWtt =  GIXSdata["HWtt"][0])
+# GIXSbkg = geometrical_corr(GIXSbkg, Ddet = metadata["instrument"]["Ddet"], det_px = metadata["instrument"]["pixel"], HWtth = GIXSbkg["HWtth"][0,0], HWtt =  GIXSbkg["HWtt"][0])
+# GIXOSdata = extract_1dGIXOS(GIXSdata, metadata['tth'], HWpx_h = metadata['DSpxHW'])
+# GIXOSbkg = extract_1dGIXOS(GIXSbkg, metadata['tth'], HWpx_h = metadata['DSpxHW'])
+# #% still need to populate metadata with instrument, sample parameters, and so on for th2q, bkg correction, eCWM analysis
+# GIXOSdata['metadata'] = metadata
+# GIXOSbkg['metadata'] = metadata
+#%% if metadata is entered manually for further processing
 # GIXOSdata['metadata'] = {
-#                             "instrument": {"energy": 15000, "alpha_i": 0.07},
+#                             "instrument": {"energy": 15000, "alpha": 0.07},
 #                             "sample_params": {"Qc": 0.0218, "temperature": 295, "tension": 0.038, "kappa": 10, "amin": 5},
 #                             "qxy0": metadata["qxy0"],
 #                             "qxy_bkg": 0.3,
 #                             "PseudoR": {"qxy0_select_idx": 1, 'RqxyHW': 0.0002},
 #                             }
 # GIXOSbkg['metadata'] = {
-#                             "instrument": {"energy": 15000, "alpha_i": 0.07},
+#                             "instrument": {"energy": 15000, "alpha": 0.07},
 #                             "qxy0": metadata["qxy0"],
 #                             "qxy_bkg": 0.3,
 #                             }
+
 #%% routine 2: directly load data from meta and GIXOS will be automatically extracted:
-# GIXOSdata, GIXOSbkg = load_gixos_from_meta('./testing_data/p08test_gixos_metadata.yaml') 
+GIXOSdata, GIXOSbkg = load_gixos_from_meta('./testing_data/p08test_gixos_metadata.yaml') 
 
 #%% from here identical 
 #%%binning in tt

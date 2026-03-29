@@ -20,7 +20,7 @@ measurements:
 
 instrument:
     energy:   15000     # must
-    alpha_i:  0.07      # must
+    alpha:  0.07      # must
     Ddet:     560.7     # optional, for geometrical correction, footprint correction
     pixel:    0.075     # optional, for geometrical correction
     #HWtth:    0.004     # [deg] optional, mandatory for 1d gixs, half width of the GIXOS pixel in tth

@@ -117,7 +117,7 @@ def load_metadata(yaml_path: str):
     meta['tth']= np.degrees(np.arcsin(meta["qxy0"] * meta["instrument"]["wavelength"] / 4 / np.pi)) * 2
     meta["sample_params"]["rho_b"] = meta["sample_params"]["Qc"]**2/16/math.pi
     # RFscaling exactly as in the original script
-    meta['RFscaling'] = meta['measurements']['flux'] * meta['measurements']['cttime_sample'] * meta['sample_params']['rho_b'] ** 2 / math.sin(math.radians(meta['instrument']['alpha_i'])) * 4
+    meta['RFscaling'] = meta['measurements']['flux'] * meta['measurements']['cttime_sample'] * meta['sample_params']['rho_b'] ** 2 / math.sin(math.radians(meta['instrument']['alpha'])) * 4
     meta['I0'] = meta['measurements']['flux'] * meta['measurements']['cttime_sample']
         
     # # Raw parameters
@@ -144,7 +144,7 @@ def load_metadata(yaml_path: str):
     
     # # instrument related
     # energy                 = meta["instrument"]["energy"]
-    # alpha_i                = meta["instrument"]["alpha_i"]
+    # alpha                = meta["instrument"]["alpha"]
     # Ddet                   = meta["instrument"]["Ddet"]
     # pixel                  = meta["instrument"]["pixel"]
     # footprint              = meta["instrument"]["footprint"]
@@ -182,13 +182,13 @@ def load_metadata(yaml_path: str):
     # assume_kappa           = np.array([kappa - kappa_deviation, kappa + kappa_deviation])
     
     # RFscaling exactly as in the original script
-    # RFscaling = flux * cttime_sample * (math.pi / 180) ** 2 * rho_b ** 2 / math.sin(math.radians(alpha_i)) * 4
+    # RFscaling = flux * cttime_sample * (math.pi / 180) ** 2 * rho_b ** 2 / math.sin(math.radians(alpha)) * 4
     
     # Return all variables in a dictionary
     # return {
     #     "Qc": Qc,
     #     "energy": energy,
-    #     "alpha_i": alpha_i,
+    #     "alpha": alpha,
     #     "Ddet": Ddet,
     #     "pixel": pixel,
     #     "footprint": footprint,
@@ -474,7 +474,7 @@ def GIXOS_th2q(inputdata):
             'Intensity':    intensity map, 2d or one line cut,
             'tth':          tth axis in deg, 
             'tt':           tt axis in deg, 
-            'metadata':     ['instrument'] with 'energy' (eV) and 'alpha_i' (deg)
+            'metadata':     ['instrument'] with 'energy' (eV) and 'alpha' (deg)
     Returns
     -------
     outputdata : dictionary
@@ -486,13 +486,13 @@ def GIXOS_th2q(inputdata):
 
     """
     outputdata = None
-    if (inputdata["metadata"] is None) or ("instrument" not in inputdata["metadata"]) or (inputdata["metadata"]["instrument"] is None) or (not check_keys_numeric(["energy", "alpha_i"], inputdata["metadata"]["instrument"])):
-        print("please provide energy [eV] and incident angle (alpha_i) [deg] in the ['metadata']['instrument']")
+    if (inputdata["metadata"] is None) or ("instrument" not in inputdata["metadata"]) or (inputdata["metadata"]["instrument"] is None) or (not check_keys_numeric(["energy", "alpha"], inputdata["metadata"]["instrument"])):
+        print("please provide energy [eV] and incident angle (alpha) [deg] in the ['metadata']['instrument']")
         return
         
     inputdata['mat'] = inputdata.pop('Intensity')    
     # calculate qxy, qz, and q, use the th2q function from p08_GIXD, it requires the intensity to be called mat
-    outputdata = th2q(inputdata, energy = inputdata["metadata"]["instrument"]["energy"], alpha_i = inputdata["metadata"]["instrument"]["alpha_i"], absQxy = False)
+    outputdata = th2q(inputdata, energy = inputdata["metadata"]["instrument"]["energy"], alpha_i = inputdata["metadata"]["instrument"]["alpha"], absQxy = False)
     outputdata["Q"] = np.sqrt(outputdata["Qxy"]**2 + outputdata["Qz"]**2)
     for key in inputdata.keys(): 
         if key not in ['mat', 'Qxy', 'Qz', 'Q']:
@@ -683,7 +683,7 @@ def GIXOS_background_corr(sampledata, chamberbkg, bulkbkg_mode = None, bulkbkg_o
         None: no wide angle bkg subtraction
         direct: using the direct wide angle line for substraction
         constant: using a constant value for substraction
-        fit: fitting the wide angle over Q to be used as a wide angle bkg, requires alpha_i and wavelength in metadata of the sample
+        fit: fitting the wide angle over Q to be used as a wide angle bkg, requires alpha and wavelength in metadata of the sample
             requires "Q" field in sampledata and chamberbkg
     bulkbkg_offset_lb: float, optional
         lower boundary for fitting the offset of the bulkbkg, as a factor to the average of the first 10 values of the bulkbkg GIXOS cut
@@ -860,7 +860,7 @@ def GIXOS_qxy_dependence(
     kappa = GIXOSdict['metadata']['sample_params']['kappa']
 
     energy = GIXOSdict['metadata']['instrument']['energy']
-    alpha_i = GIXOSdict['metadata']['instrument']['alpha_i']
+    alpha = GIXOSdict['metadata']['instrument']['alpha']
     HWtth = GIXOSdict['HWtth'][0, 0]
     HWtt = GIXOSdict['HWtt'][0]
 
@@ -924,7 +924,7 @@ def GIXOS_qxy_dependence(
         
         for phi_value in phi:            
             ds_model = calc_eCWM_roughness_factor_DS(
-                alpha_i,
+                alpha,
                 beta_space[row_index],
                 phi_value,
                 energy,
@@ -1082,20 +1082,20 @@ def GIXOS2R(GIXOS, transmission_corr = False, footprint_effect = False, use_appr
     GIXOS["fresnel"] = calc_fresnel(GIXOS["Qz"][:,GIXOS["metadata"]["PseudoR"]["qxy0_select_idx"]], GIXOS["metadata"]["sample_params"]["Qc"]) # check if fresnel == calc_fresnel      SAME
     #GIXOS["Qz_array"] = np.asarray(GIXOS ["Qz"]).reshape(-1, 1) # done to convert GIXOS ["Qz"] from a row vetor to a column vector for calc_tbeta_sqr
     # Qz should always be a column vector!
-    if footprint_effect and ("footprint" in GIXOS["metadata"]["instrument"]) and ("Ddet" in GIXOS["metadata"]["instrument"]) and ("alpha_i" in GIXOS["metadata"]["instrument"]) and ("energy" in GIXOS["metadata"]["instrument"]):
-        GIXOS["dQz"] = GIXOS_dQz(GIXOS["Qz"][:,GIXOS["metadata"]["PseudoR"]["qxy0_select_idx"]], GIXOS["metadata"]["instrument"]["energy"], GIXOS["metadata"]["instrument"]["alpha_i"], GIXOS["metadata"]["instrument"]["Ddet"], GIXOS["metadata"]["instrument"]["footprint"])     # Almost same, just not iterating through enough times(?) --> missing last row      SAME now
+    if footprint_effect and ("footprint" in GIXOS["metadata"]["instrument"]) and ("Ddet" in GIXOS["metadata"]["instrument"]) and ("alpha" in GIXOS["metadata"]["instrument"]) and ("energy" in GIXOS["metadata"]["instrument"]):
+        GIXOS["dQz"] = GIXOS_dQz(GIXOS["Qz"][:,GIXOS["metadata"]["PseudoR"]["qxy0_select_idx"]], GIXOS["metadata"]["instrument"]["energy"], GIXOS["metadata"]["instrument"]["alpha"], GIXOS["metadata"]["instrument"]["Ddet"], GIXOS["metadata"]["instrument"]["footprint"])     # Almost same, just not iterating through enough times(?) --> missing last row      SAME now
     else:
         GIXOS["dQz"] = np.ones((len(GIXOS["tt"]),5))
-        print("No footprint broadending calculation. For calculation: please set footprint_effect = True and provide the footprint [mm], detector distance Ddet [mm], incident angle alpha_i [deg] and energy [eV] in metadata field")
+        print("No footprint broadending calculation. For calculation: please set footprint_effect = True and provide the footprint [mm], detector distance Ddet [mm], incident angle alpha [deg] and energy [eV] in metadata field")
         
-    if transmission_corr and ("Ddet" in GIXOS["metadata"]["instrument"]) and ("alpha_i" in GIXOS["metadata"]["instrument"]) and ("energy" in GIXOS["metadata"]["instrument"]):
+    if transmission_corr and ("Ddet" in GIXOS["metadata"]["instrument"]) and ("alpha" in GIXOS["metadata"]["instrument"]) and ("energy" in GIXOS["metadata"]["instrument"]):
         if footprint_effect and ("footprint" in GIXOS["metadata"]["instrument"]):
-            GIXOS["transmission"] = calc_tbeta_sqr(GIXOS["tt"], GIXOS["metadata"]["sample_params"]["Qc"], GIXOS["metadata"]["instrument"]["energy"], GIXOS["metadata"]["instrument"]["alpha_i"], GIXOS["metadata"]["instrument"]["Ddet"], GIXOS["metadata"]["instrument"]["footprint"])  #  Mostly the same, but the 4th column starts to deviate from the MATLAB output by hundredths
+            GIXOS["tbeta_sqr"] = calc_tbeta_sqr(GIXOS["tt"], GIXOS["metadata"]["sample_params"]["Qc"], GIXOS["metadata"]["instrument"]["energy"], GIXOS["metadata"]["instrument"]["alpha"], GIXOS["metadata"]["instrument"]["Ddet"], GIXOS["metadata"]["instrument"]["footprint"])  #  Mostly the same, but the 4th column starts to deviate from the MATLAB output by hundredths
         else:
-            GIXOS["transmission"] = calc_tbeta_sqr(GIXOS["tt"], GIXOS["metadata"]["sample_params"]["Qc"], GIXOS["metadata"]["instrument"]["energy"], GIXOS["metadata"]["instrument"]["alpha_i"], GIXOS["metadata"]["instrument"]["Ddet"], 0.1)  #  Mostly the same, but the 4th column starts to deviate from the MATLAB output by hundredths
+            GIXOS["tbeta_sqr"] = calc_tbeta_sqr(GIXOS["tt"], GIXOS["metadata"]["sample_params"]["Qc"], GIXOS["metadata"]["instrument"]["energy"], GIXOS["metadata"]["instrument"]["alpha"], GIXOS["metadata"]["instrument"]["Ddet"], 0.1)  #  Mostly the same, but the 4th column starts to deviate from the MATLAB output by hundredths
     else:
-        GIXOS["transmission"] = np.ones((len(GIXOS["tt"]),4))
-        print("no transmission correction. For correction: please set the transmission_corr = True and provide the detector distance Ddet [mm], incident angle alpha_i [deg] and energy [eV] in metadata field")
+        GIXOS["tbeta_sqr"] = np.ones((len(GIXOS["tt"]),4))
+        print("no beta transmission correction. For correction: please set the transmission_corr = True and provide the detector distance Ddet [mm], incident angle alpha [deg] and energy [eV] in metadata field")
     
     if len(GIXOS["HWtt"])>1:
         DSbetaHW = GIXOS["HWtt"][GIXOS["metadata"]["PseudoR"]["qxy0_select_idx"]]
@@ -1104,12 +1104,12 @@ def GIXOS2R(GIXOS, transmission_corr = False, footprint_effect = False, use_appr
         DSbetaHW = GIXOS["HWtt"][0]
         DSphiHW = GIXOS["HWtth"][0,0]
     
-    GIXOS["DS_RRF_integ"], GIXOS["DS_term_integ"], GIXOS["RRF_term_integ"] = calc_eCWM_red_r(GIXOS["tt"], GIXOS["tth"][0,GIXOS["metadata"]["PseudoR"]["qxy0_select_idx"]], GIXOS["metadata"]["instrument"]["energy"], GIXOS["metadata"]["instrument"]["alpha_i"], GIXOS["metadata"]["PseudoR"]["RqxyHW"], DSphiHW, DSbetaHW, GIXOS["metadata"]["sample_params"]["tension"], GIXOS["metadata"]["sample_params"]["temperature"], GIXOS["metadata"]["sample_params"]["kappa"], GIXOS["metadata"]["sample_params"]["amin"], use_approx=use_approx)
+    GIXOS["DS_RRF_integ"], GIXOS["DS_term_integ"], GIXOS["RRF_term_integ"] = calc_eCWM_red_r(GIXOS["tt"], GIXOS["tth"][0,GIXOS["metadata"]["PseudoR"]["qxy0_select_idx"]], GIXOS["metadata"]["instrument"]["energy"], GIXOS["metadata"]["instrument"]["alpha"], GIXOS["metadata"]["PseudoR"]["RqxyHW"], DSphiHW, DSbetaHW, GIXOS["metadata"]["sample_params"]["tension"], GIXOS["metadata"]["sample_params"]["temperature"], GIXOS["metadata"]["sample_params"]["kappa"], GIXOS["metadata"]["sample_params"]["amin"], use_approx=use_approx)
     # DS = Diffuse Scatter; RRF = Specular Reflectivity Normalized by Fresnel Reflectivity
     # Approx form is derived from Taylor expansion, which is dependent on being close to 0 angle --> higher deviations at high angles
     
     # prefactor for this qxy0
-    GIXOS['prefactor_DS'] = GIXOS["metadata"]["sample_params"]["Qc"]**4 * 4 * GIXOS["transmission"][:, 3] / (2*GIXOS["Qz"][:,GIXOS["metadata"]["PseudoR"]["qxy0_select_idx"]])**4 
+    GIXOS['prefactor_DS'] = GIXOS["metadata"]["sample_params"]["Qc"]**4 * 4 * GIXOS["tbeta_sqr"][:, 3] / (2*GIXOS["Qz"][:,GIXOS["metadata"]["PseudoR"]["qxy0_select_idx"]])**4 
     
     # computes reflectivity
     GIXOS["refl"] = np.column_stack([
@@ -1138,7 +1138,7 @@ def GIXOS_file_output(GIXOS, xrr_config, metadata, tt_step):
         f.write(f"wide angle bkg at qxy0 = {metadata['qxy_bkg']:.6f} /A\n")
         f.write(f"# geometry\n")
         f.write(f"energy [eV]: {metadata['energy']:.2f}\n")
-        f.write(f"incidence [deg]: {metadata['alpha_i']}\n")
+        f.write(f"incidence [deg]: {metadata['alpha']}\n")
         f.write(f"footprint [mm]: {metadata['footprint']:.1f}\n")
         f.write(f"sdd [mm]: {metadata['Ddet']:.2f}\n")
         f.write(f"qxy resolution HWHM at specular [A^-1]: {metadata['DSresHW']}\n")
@@ -1174,7 +1174,7 @@ def GIXOS_file_output(GIXOS, xrr_config, metadata, tt_step):
         f.write(f"wide angle bkg at qxy0 = {metadata['qxy_bkg']:.6f} /A\n")
         f.write(f"# geometry\n")
         f.write(f"energy [eV]: {metadata['energy']:.2f}\n")
-        f.write(f"incidence [deg]: {metadata['alpha_i']}\n")
+        f.write(f"incidence [deg]: {metadata['alpha']}\n")
         f.write(f"footprint [mm]: {metadata['footprint']:.1f}\n")
         f.write(f"sdd [mm]: {metadata['Ddet']:.2f}\n")
         f.write(f"qxy resolution HWHM at specular [A^-1]: {metadata['DSresHW']}\n")
@@ -1210,7 +1210,7 @@ def GIXOS_file_output(GIXOS, xrr_config, metadata, tt_step):
         f.write(f"wide angle bkg at qxy0 = {metadata['qxy_bkg']:.6f} /A\n")    
         f.write(f"# geometry\n")
         f.write(f"energy [eV]: {metadata['energy']:.2f}\n")
-        f.write(f"incidence [deg]: {metadata['alpha_i']}\n")
+        f.write(f"incidence [deg]: {metadata['alpha']}\n")
         f.write(f"footprint [mm]: {metadata['footprint']:.1f}\n")
         f.write(f"sdd [mm]: {metadata['Ddet']:.2f}\n")
         f.write(f"qxy resolution HWHM at specular [A^-1]: {metadata['DSresHW']}\n")
@@ -1295,7 +1295,7 @@ def GIXOS_file_output(GIXOS, xrr_config, metadata, tt_step):
 #     CWM_model["RRF_term"] = np.zeros((len(model["tt"]), GIXOS["GIXOS"].shape[1]))
 
 #     metadata["energy"] = np.asarray(metadata["energy"])
-#     metadata["alpha_i"] = np.asarray(metadata["alpha_i"])
+#     metadata["alpha"] = np.asarray(metadata["alpha"])
 #     metadata["RqxyHW"] = np.asarray(metadata["RqxyHW"])
 #     metadata["DSqxyHW_real"] = np.asarray(metadata["DSqxyHW_real"])
 #     # GIXOS["DSbetaHW"] = np.asarray(GIXOS["DSbetaHW"])        only add this and make changes if we say that DSbetaHW is part of GIXOS above
@@ -1308,10 +1308,10 @@ def GIXOS_file_output(GIXOS, xrr_config, metadata, tt_step):
 
 #     def process(idx):
 #         show_last_plot = (idx == GIXOS["GIXOS"].shape[1] - 1)  # Only show plot on last iteration
-#         model_DS_RRF, model_DS_term, model_RRF_term = calc_film_DS_RRF_integ(model["tt"], metadata["tth"][idx], metadata['energy'], metadata['alpha_i'], metadata['RqxyHW'], metadata['DSqxyHW_real'][idx], DSbetaHW, metadata['tension'], metadata['temperature'], metadata['kappa'], metadata['amin'], show_plot = False)
-#         assume_model_1_DS_RRF, assume_model_1_DS_term, assume_model_1_RRF_term = calc_film_DS_RRF_integ(model["tt"], metadata["tth"][idx], metadata['energy'], metadata['alpha_i'], metadata['RqxyHW'], metadata['DSqxyHW_real'][idx], DSbetaHW, metadata['tension'], metadata['temperature'], metadata['assume_kappa'][0], metadata['amin'], show_plot = False)
-#         assume_model_2_DS_RRF, assume_model_2_DS_term, assume_model_2_RRF_term = calc_film_DS_RRF_integ(model["tt"], metadata["tth"][idx], metadata['energy'], metadata['alpha_i'], metadata['RqxyHW'], metadata['DSqxyHW_real'][idx], DSbetaHW, metadata['tension'], metadata['temperature'], metadata['assume_kappa'][1], metadata['amin'], show_plot = False)
-#         CWM_model_DS_RRF, CWM_model_DS_term, CWM_model_RRF_term = calc_film_DS_RRF_integ(model["tt"], metadata["tth"][idx], metadata['energy'], metadata['alpha_i'], metadata['RqxyHW'], metadata['DSqxyHW_real'][idx], DSbetaHW, metadata['tension'], metadata['temperature'], 0, metadata['amin'], show_plot = show_last_plot)
+#         model_DS_RRF, model_DS_term, model_RRF_term = calc_film_DS_RRF_integ(model["tt"], metadata["tth"][idx], metadata['energy'], metadata['alpha'], metadata['RqxyHW'], metadata['DSqxyHW_real'][idx], DSbetaHW, metadata['tension'], metadata['temperature'], metadata['kappa'], metadata['amin'], show_plot = False)
+#         assume_model_1_DS_RRF, assume_model_1_DS_term, assume_model_1_RRF_term = calc_film_DS_RRF_integ(model["tt"], metadata["tth"][idx], metadata['energy'], metadata['alpha'], metadata['RqxyHW'], metadata['DSqxyHW_real'][idx], DSbetaHW, metadata['tension'], metadata['temperature'], metadata['assume_kappa'][0], metadata['amin'], show_plot = False)
+#         assume_model_2_DS_RRF, assume_model_2_DS_term, assume_model_2_RRF_term = calc_film_DS_RRF_integ(model["tt"], metadata["tth"][idx], metadata['energy'], metadata['alpha'], metadata['RqxyHW'], metadata['DSqxyHW_real'][idx], DSbetaHW, metadata['tension'], metadata['temperature'], metadata['assume_kappa'][1], metadata['amin'], show_plot = False)
+#         CWM_model_DS_RRF, CWM_model_DS_term, CWM_model_RRF_term = calc_film_DS_RRF_integ(model["tt"], metadata["tth"][idx], metadata['energy'], metadata['alpha'], metadata['RqxyHW'], metadata['DSqxyHW_real'][idx], DSbetaHW, metadata['tension'], metadata['temperature'], 0, metadata['amin'], show_plot = show_last_plot)
 #         return idx, model_DS_RRF, model_DS_term, model_RRF_term, assume_model_1_DS_RRF, assume_model_1_DS_term, assume_model_1_RRF_term, assume_model_2_DS_RRF, assume_model_2_DS_term, assume_model_2_RRF_term, CWM_model_DS_RRF, CWM_model_DS_term, CWM_model_RRF_term
 #     results = Parallel(n_jobs=-1, backend="loky")(
 #         delayed(process)(i) for i in range(GIXOS["GIXOS"].shape[1])
