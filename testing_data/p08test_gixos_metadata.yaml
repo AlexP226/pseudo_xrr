@@ -1,66 +1,53 @@
 # metadata.yaml
-
-colorset:
-  - [0.0,    0.4470, 0.7410]
-  - [0.8500, 0.3250, 0.0980]
-  - [0.9290, 0.6940, 0.1250]
-  - [0.4940, 0.1840, 0.5560]
-  - [0.4660, 0.6740, 0.1880]
-  - [0.3010, 0.7450, 0.9330]
-  - [0.6350, 0.0780, 0.1840]
-  - [0.0,    0.4470, 0.7410]
-  - [0.8500, 0.3250, 0.0980]
-  - [0.9290, 0.6940, 0.1250]
-
-gamma_E: 0.5772156649015329
-Qc:       0.0218
-energy:   15000
-alpha_i:  0.07
-Ddet:     560.7
-pixel:    0.075
-footprint: 60
-
-qxy0: [0.015, 0.02, 0.03, 0.04, 0.05, 0.35, 0.37, 0.39, 0.41, 0.43, 0.45]
-qxy0_select_idx: 1
-qxy_bkg: 0.3
-
-RqxyHW:  0.0002
-DSresHW: 0.003
-DStthFW_px: 0.008   # tth of the pixel in FW
-DSpxHW:  5
-
 # data type: 2d gixs or 1d gixos
 datatype: "2d gixs"
+geometrical_correction: True
 
 paths:
   path_xrr: "None"
   xrr_datafile:
-  path: "U:/p08/2023/data/11016139/processed/GID/angularrebin/"         
+  gixs_path: "U:/p08/2023/data/11016139/processed/GID/angularrebin/"         
   path_out: "U:/p08/2023/data/11016139/scratch_cc/"
 
-sample:      "GID_pp4_edta_a_1"
-scan:        137
-bkgsample:   "GID_chamber_bkg"
-bkgscan:     1144
+measurements:
+    sample:      "GID_pp4_edta_a_1"
+    scan:        137
+    bkgsample:   "GID_chamber_bkg"
+    bkgscan:     1144
+    flux:          1.5e10 # ct/s
+    cttime_sample: 140 # seconds
+    cttime_bkg:    140 # seconds
 
-flux:          6.3e10 # ct/s
-cttime_sample: 140 # seconds
-cttime_bkg:    140 # seconds
+instrument:
+    energy:   15000     # must
+    alpha_i:  0.07      # must
+    Ddet:     560.7     # optional, for geometrical correction, footprint correction
+    pixel:    0.075     # optional, for geometrical correction
+    #HWtth:    0.004     # [deg] optional, mandatory for 1d gixs, half width of the GIXOS pixel in tth
+    #HWtt:     0.004     # [deg] optional, half width of the pixel in tt
+    footprint: 60       # [mm] optional, for footprint correction
 
-physical_constants:
-  kb:          1.381e-23   # J/K
-  tension:     0.038       # N/m
-  temperature: 295        # K
+qxy0: [0.005, 0.01, 0.015, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.11, 0.12, 0.14, 0.16, 0.35, 0.37, 0.39, 0.41, 0.43, 0.45]
+qxy_bkg: 0.3
+DSpxHW:  6
 
-derived:
-  kappa: 10
-  amin: 5
+PseudoR:
+    qxy0_select_idx: 5
+    RqxyHW:  0.0002
+
+sample_params:
+    Qc:       0.0218    # critical angle in 1/A
+    kb:          1.381e-23   # J/K
+    tension:     0.038       # N/m
+    temperature: 295        # K
+    kappa: 15   # kbT
+    amin: 5     # molecular distance
 
 # For Dependency will need to add:
 # DSqxyHW
 # assume_kappa
-# rho_b
+
 dependency:
-  qz_selected: [0.1, 0.3, 0.35, 0.4, 0.6]
-  kappa_deviation: 3
+    qz_selected: [0.1, 0.15]
+    kappa_deviation: 3
   
