@@ -633,7 +633,7 @@ def calc_eCWM_roughness_factor_SP(
     
         C = trapezoid(C_integrand, r_vals, axis=1)
         eCWM_Psi_R = ((xi / kbT_gamma) * resolution**eta + resolution**2 * C / (4 * pi)) * (1 / qmax)**eta * np.exp(eta * besselk(0, 1 / (Lk * qmax)))
-
+        print("calculate circular resolution done")
     # ------------------------------------------------------------
     # Mode 1: rectangular slit resolution (Eq. 18)
     # ------------------------------------------------------------
@@ -902,7 +902,7 @@ def calc_eCWM_roughness_factor_SP(
         )
         # background subtracted roughness factor
         eCWM_Psi_R = Psi_slit_SP - Psi_slit_bkgoff
-    
+        print("calculate slit resolution done")
     # integrated specular roughness factor Psi_R(Qz)
     # includes the finite detector resolution around the specular condition
     return eCWM_Psi_R

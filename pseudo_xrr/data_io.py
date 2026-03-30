@@ -119,112 +119,7 @@ def load_metadata(yaml_path: str):
     meta["sample_params"]["rho_b"] = meta["sample_params"]["Qc"]**2/16/math.pi
     # RFscaling exactly as in the original script
     meta['I0'] = meta['measurements']['flux'] * meta['measurements']['cttime_sample']
-        
-    # # Raw parameters
-    # datatype               = meta["datatype"]
-    # # Paths and data loading
-    # path_xrr               = meta["paths"]["path_xrr"]
-    # xrr_datafile           = meta["paths"]["xrr_datafile"]
-    # if (path_xrr is None) or (xrr_datafile is None) or (path_xrr.lower() == "none") or (xrr_datafile.lower() == "none"):
-    #     xrr_data = None
-    # else: 
-    #     xrr_data = pd.read_csv(
-    #         path_xrr + xrr_datafile,
-    #         delim_whitespace=True
-    #         )
-    # path                   = meta["paths"]["path"]
-    # path_out               = meta["paths"]["path_out"]
-    # sample                 = meta["measurements"]["sample"]
-    # scan                   = np.array(meta["measurements"]["scan"])
-    # bkgsample              = meta["measurements"]["bkgsample"]
-    # bkgscan                = np.array(meta["measurements"]["bkgscan"])
-    # flux                   = meta["measurements"]["flux"]
-    # cttime_sample          = meta["measurements"]["cttime_sample"]
-    # cttime_bkg             = meta["measurements"]["cttime_bkg"]
     
-    # # instrument related
-    # energy                 = meta["instrument"]["energy"]
-    # alpha                = meta["instrument"]["alpha"]
-    # Ddet                   = meta["instrument"]["Ddet"]
-    # pixel                  = meta["instrument"]["pixel"]
-    # footprint              = meta["instrument"]["footprint"]
-    # wavelength             = 12404 / energy
-
-    # # 
-    # qxy0                   = np.array(meta["qxy0"])
-    # tth                    = np.degrees(np.arcsin(qxy0 * wavelength / 4 / pi)) * 2          # try as a list
-    # qxy_bkg                = meta["qxy_bkg"]
-    # DSpxHW                 = meta["DSpxHW"]
-    # #DStthFW_px             = meta["DStthFW_px"]
-    # #tth_roiHW_real         = DStthFW_px * DSpxHW
-    # #DSqxyHW_real           = np.radians(tth_roiHW_real) / 2 * 4 * pi / wavelength * np.cos(np.radians(tth/2))
-    
-    # qxy0_select_idx        = meta["PseudoR"]["qxy0_select_idx"]
-    # RqxyHW                 = meta["PseudoR"]["RqxyHW"]
-    # #DSresHW                = meta["DSresHW"]
-    # #DSqxyHW                = 2 * DSresHW
-    
-    # # Physical constants
-    # Qc                     = meta["sample_params"]["Qc"]
-    # rho_b                  = Qc**2/16/math.pi
-    # tension                = meta["sample_params"]["tension"]
-    # temperature            = meta["sample_params"]["temperature"]
-    # kappa                  = meta["sample_params"]["kappa"]
-    # Lk                     = math.sqrt(kappa * kb * temperature / tension) * 1e10
-    # amin                   = meta["sample_params"]["amin"]
-    # qmax                   = math.pi / amin
-    
-    # # Dependency specific parameters
-
-    # qz_selected            = np.array(meta["dependency"]["qz_selected"])
-    # kappa_deviation        = meta["dependency"]["kappa_deviation"]
-    # assume_kappa           = np.array([kappa - kappa_deviation, kappa + kappa_deviation])
-    
-    # RFscaling exactly as in the original script
-    # RFscaling = flux * cttime_sample * (math.pi / 180) ** 2 * rho_b ** 2 / math.sin(math.radians(alpha)) * 4
-    
-    # Return all variables in a dictionary
-    # return {
-    #     "Qc": Qc,
-    #     "energy": energy,
-    #     "alpha": alpha,
-    #     "Ddet": Ddet,
-    #     "pixel": pixel,
-    #     "footprint": footprint,
-    #     "wavelength": wavelength,
-    #     "qxy0": qxy0,
-    #     "qxy0_select_idx": qxy0_select_idx,
-    #     "qxy_bkg": qxy_bkg,
-    #     "RqxyHW": RqxyHW,
-    #     #"DSresHW": DSresHW,
-    #     #"DStthFW_px": DStthFW_px,
-    #     "DSpxHW": DSpxHW,
-    #     "tth": tth,
-    #     #"tth_roiHW_real": tth_roiHW_real,
-    #     #"DSqxyHW_real": DSqxyHW_real,
-    #     "datatype": datatype,
-    #     "path_xrr": path_xrr,
-    #     "xrr_datafile": xrr_datafile,
-    #     "xrr_data": xrr_data,
-    #     "path": path,
-    #     "path_out": path_out,
-    #     "sample": sample,
-    #     "scan": scan,
-    #     "bkgsample": bkgsample,
-    #     "bkgscan": bkgscan,
-    #     "tension": tension,
-    #     "kappa": kappa,
-    #     "temperature": temperature,
-    #     "Lk": Lk,
-    #     "amin": amin,
-    #     "qmax": qmax,
-    #     "RFscaling": RFscaling,
-    #     #"DSqxyHW": DSqxyHW,
-    #     "qz_selected": qz_selected,
-    #     "kappa_deviation": kappa_deviation,
-    #     "assume_kappa": assume_kappa,
-    #     "rho_b": rho_b
-    # }
     return meta
 
 def load_gixos_from_meta(yaml_path: str):
@@ -254,9 +149,17 @@ def load_gixos_from_meta(yaml_path: str):
     importbkg       = None
     print("indicator")
     
-    importGIXOSdata = load_data(f"{sample}_{scan:05d}_angle", path, metadata = yaml_path, datatype=datatype)
-    importbkg = load_data(f"{bkgsample}_{bkgscan:05d}_angle", path, metadata = yaml_path, datatype=datatype)
     if "2d gixs" in datatype.lower():
+        # checking facility otherwise raise error
+        if meta["facility"] == "PETRA III/P08":
+            filepattern = f"{sample}_{scan:05d}_angle"
+            importGIXOSdata = load_data(filepattern, path, metadata = yaml_path, datatype=datatype)
+            importbkg = load_data(filepattern, path, metadata = yaml_path, datatype=datatype)
+        else:
+            raise ValueError(
+                "2d gixs mode has only been implemented for PETRA III/P08 'Langmuir GID setup'"
+            )
+        
         print("load 2d gixs and generate sets of 1d gixos from qxy0 list in meta, using DSpxHW binning")
         if meta["geometrical_correction"] and importGIXOSdata["HWtth"].shape == (1,1) and importGIXOSdata["HWtt"].shape == (1,):
             print("geometrical correction")
@@ -266,67 +169,38 @@ def load_gixos_from_meta(yaml_path: str):
             print("geometrical correction cannot be performed when HWtth and HWtt are not unified across data")
         print("extract 1d gixos curve for qxy0 list, each binning %d pixels" %(2*meta["DSpxHW"]))
         importGIXOSdata = extract_1dGIXOS(importGIXOSdata, tth, HWpx_h = meta["DSpxHW"])
-        importbkg = extract_1dGIXOS(importbkg, tth, HWpx_h = meta["DSpxHW"])
+        importbkg = extract_1dGIXOS(importbkg, tth, HWpx_h = meta["DSpxHW"])       
+            
     elif "1d gixos" in datatype.lower():
-        print("load 1d cut")
-        print("to be implemented")
+        if meta["facility"] == "NSLS-II/12ID":
+            # build one prefix per scan id:
+            # <sample>-id<id>
+            sample_prefix_list = [f"{sample}-id{int(scan_id)}" for scan_id in scan]
+            bkg_prefix_list = [f"{bkgsample}-id{int(scan_id)}" for scan_id in bkgscan]
+
+            print("load 1d gixos cuts from NSLS-II/12ID")
+
+            importGIXOSdata = load_data(
+                sample_prefix_list,
+                path,
+                metadata=yaml_path,
+                datatype=datatype
+            )
+
+            importbkg = load_data(
+                bkg_prefix_list,
+                path,
+                metadata=yaml_path,
+                datatype=datatype
+            )
+        else:
+            raise ValueError(
+                "1d gixos mode has only been implemented for NSLS-II/12ID."
+            )
     
-    # elif "1d gixos" in datatype.lower():
-    #     print("load 1d cut")
-    #     # Loop over each qxy0 index
-    #     for idx in range(len(qxy0)):
-    #         # Construct filenames
-    #         fileprefix       = f"{sample}-id{scan[idx]}"
-    #         GIXOSfilename    = f"{path}{fileprefix}.txt"
-    #         importGIXOS_qxy0 = np.loadtxt(GIXOSfilename, skiprows=16)
-
-    #         # Initialize storage dicts on first iteration
-    #         if importGIXOSdata is None:
-    #             nrows = importGIXOS_qxy0.shape[0]
-    #             ncols = len(qxy0)
-    #             importGIXOSdata = {
-    #                 "Intensity": np.zeros((nrows, ncols)),
-    #                 "tt_qxy0":   np.zeros((nrows, ncols)),
-    #                 "error":     np.zeros((nrows, ncols)),
-    #                 "tt":        None,
-    #                 "metadata":  meta
-    #             }
-    #         # Fix bad pixel row 269 by averaging rows 268 & 270
-    #         mean_row = np.mean(importGIXOS_qxy0[[268, 270], :], axis=0)
-    #         importGIXOS_qxy0[269, :] = mean_row
-
-    #         # Populate sample data
-    #         importGIXOSdata["Intensity"][:, idx] = importGIXOS_qxy0[:, 2]
-    #         importGIXOSdata["tt_qxy0"][:, idx]   = importGIXOS_qxy0[:, 1] - 0.01
-    #         importGIXOSdata["error"][:, idx]     = np.sqrt(importGIXOS_qxy0[:, 2])
-
-    #         # Background file
-    #         bkgprefix        = f"{bkgsample}-id{bkgscan[idx]}"
-    #         bkgfilename      = f"{path}{bkgprefix}.txt"
-    #         importbkg_qxy0   = np.loadtxt(bkgfilename, skiprows=16)
-
-    #         if importbkg is None:
-    #             nrows_bkg = importbkg_qxy0.shape[0]
-    #             importbkg = {
-    #                 "Intensity": np.zeros((nrows_bkg, ncols)),  # should ncols be defined in here since if importGIXOSdata has values then it will not be defined in this if statment?
-    #                 "tt_qxy0":   np.zeros((nrows_bkg, ncols)),
-    #                 "error":     np.zeros((nrows_bkg, ncols)),
-    #                 "tt":        None,
-    #                 "metadata":  meta
-    #             }
-    #         # Fix bad pixel
-    #         importbkg_qxy0[269, :] = np.mean(importbkg_qxy0[[268, 270], :], axis=0)
-
-    #         importbkg["Intensity"][:, idx] = importbkg_qxy0[:, 2]
-    #         importbkg["tt_qxy0"][:, idx]   = importGIXOS_qxy0[:, 1]
-    #         importbkg["error"][:, idx]     = np.sqrt(importbkg_qxy0[:, 2])
-    #         print(f"{qxy0[idx]:f}", end="\t")
-
-    #     # Compute mean tt over qxy0 for both dicts
-    #     importGIXOSdata["tt"] = np.mean(importGIXOSdata["tt_qxy0"], axis=1)
-    #     importbkg["tt"]       = np.mean(importbkg["tt_qxy0"], axis=1)
-    # else:
-    #     print("only 2d gixs or 1d gixos cut is supported")
+    else:
+        print("only 2d gixs or 1d gixos cut is supported")
+    
     return importGIXOSdata, importbkg
 
 # Example usage:
@@ -372,33 +246,136 @@ def load_data(gixosdataprefix, path, metadata = None, datatype = "2d gixs"):
         print("load 2d image")
         importeddata = read_2D(gixosdataprefix, path, axis = ['tth', 'tt'])
         importeddata['Intensity'] = importeddata.pop('mat')
-        #importeddata["HWtth"] = np.mean(np.diff(importeddata["tth"], axis = 1)/2, axis = 0, keepdims = True)
         importeddata["HWtth"] = mean1d_if_within_percent(np.diff(importeddata["tth"], axis = 1)/2)
         importeddata["HWpx_h"] = .5
-        #importeddata["HWtt"] = np.mean(np.diff(importeddata["tt"], axis = 0)/2, axis = 0, keepdims = True)
         importeddata["HWtt"] = mean1d_if_within_percent(np.diff(importeddata["tt"], axis = 0)/2)
         importeddata["HWpx_v"] = .5
+    
     elif "1d gixos" in datatype.lower():
-        '''
-        currently implemented for the OPLS GIXOS cut
+        """
+        implemented for NSLS-II/12ID 1d GIXOS cuts
+
+        expected input:
+        - gixosdataprefix can be either:
+            * a single string prefix, or
+            * a list/tuple/ndarray of string prefixes
+        - each file is: <path><prefix>.txt
+
+        expected file format:
         four columns: idx, tt(beta), intensity, qz
-        '''
-        print("load 1d cut")
-        # Construct filenames
-        GIXOSfilename    = f"{path}{gixosdataprefix}.txt"
-        dataread = np.loadtxt(GIXOSfilename, skiprows=16)
-        importeddata = {
-            "Intensity": dataread[:, 2],
-            "error":     np.sqrt(dataread[:, 2]),
-            "tt":        dataread[:, 1],
-            "tth":       [[]],
-            "HWtth":    [],
-            "HWpx_h":   .5,
-            "HWtt":     np.mean(np.diff(importeddata["tt"], axis = 0)/2, axis = 0, keepdims = True),
-            "HWpx_v":   .5
-        }
+        """
+        # normalize input to a list of file prefixes
+        if isinstance(gixosdataprefix, str):
+            prefix_list = [gixosdataprefix]
+        else:
+            prefix_list = list(gixosdataprefix)
+
+        if len(prefix_list) == 0:
+            raise ValueError("For '1d gixos', gixosdataprefix must contain at least one file prefix.")
+
+        # load metadata early because we need tth / HWtth
+        meta_loaded = None
+        if metadata is not None:
+            try:
+                meta_loaded = load_metadata(metadata)
+            except Exception:
+                meta_loaded = None
+                print("cannot find metadata")
+
+        ncols = len(prefix_list)
+        
+        # optional consistency checks against metadata
+        if meta_loaded is not None:
+            if "tth" not in meta_loaded:
+                raise ValueError("metadata must contain 'tth' for '1d gixos' loading.")
+
+            if len(meta_loaded["tth"]) != ncols:
+                raise ValueError(
+                    "Number of 1d gixos files must match len(metadata['tth']) / len(metadata['qxy0'])."
+                )
+
+            if "qxy0" in meta_loaded and len(meta_loaded["qxy0"]) != ncols:
+                raise ValueError(
+                    "Number of 1d gixos files must match number of qxy0 entries in metadata."
+                )        
+        
+        importeddata = None
+
+        for idx, prefix in enumerate(prefix_list):
+            GIXOSfilename = f"{path}{prefix}.txt"
+            dataread = np.loadtxt(GIXOSfilename, skiprows=16)
+
+            # expected columns: idx, tt(beta), intensity, qz
+            tt_col = np.asarray(dataread[:, 1], dtype=float)
+            inten_col = np.asarray(dataread[:, 2], dtype=float)
+
+            if importeddata is None:
+                nrows = len(tt_col)
+
+                importeddata = {
+                    "Intensity": np.zeros((nrows, ncols), dtype=float),
+                    "error": np.zeros((nrows, ncols), dtype=float),
+                    "tt": tt_col.copy(),                 # final tt should be 1D: (n,)
+                    "tth": np.zeros((1, ncols), dtype=float),
+                    "HWtth": None,
+                    "HWpx_h": 0.5,
+                    "HWtt": None,
+                    "HWpx_v": 0.5,
+                }
+
+                # HWtth from metadata['HWtth'] -> shape (1,1)
+                if meta_loaded is not None and "tth" in meta_loaded:
+                    importeddata["tth"] = meta_loaded["tth"][np.newaxis, :]
+                else:
+                    raise ValueError(
+                        "For '1d gixos', metadata must provide 'qxy0', 'energy', so tth can be calculated and the output matches extract_1dGIXOS."
+                    )
+
+                # HWtt from averaged step size of the tt column -> shape (1,)
+                importeddata["HWtt"] = np.array([np.mean(np.diff(tt_col)) / 2], dtype=float)
+
+                # HWtth from metadata['HWtth'] -> shape (1,1)
+                if meta_loaded is not None and "HWtth" in meta_loaded["instrument"]:
+                    importeddata["HWtth"] = np.array([[float(meta_loaded["instrument"]["HWtth"])]], dtype=float)
+                else:
+                    raise ValueError(
+                        "For '1d gixos', metadata must provide 'HWtth' so the output matches extract_1dGIXOS."
+                    )
+
+                # optional consistency check for later files
+                tt_ref = tt_col.copy()
+            else:
+                if len(tt_col) != importeddata["Intensity"].shape[0]:
+                    raise ValueError(
+                        f"1d gixos files do not have the same number of rows: "
+                        f"{prefix} has {len(tt_col)}, expected {importeddata['Intensity'].shape[0]}"
+                    )
+
+                # require same tt grid
+                if not np.allclose(tt_col, tt_ref, rtol=0, atol=1e-8):
+                    raise ValueError(
+                        f"1d gixos files do not share the same tt axis: {prefix}"
+                    )
+
+            importeddata["Intensity"][:, idx] = inten_col
+            importeddata["error"][:, idx] = np.sqrt(np.maximum(inten_col, 0.0))
+
+            # tth comes from metadata qxy0 list, shape must be (1, m)
+            if metadata is not None:
+                try:
+                    if "meta_loaded" in locals() and meta_loaded is not None:
+                        importeddata["metadata"] = meta_loaded
+                    else:
+                        importeddata["metadata"] = load_metadata(metadata)
+                except Exception:
+                    importeddata["metadata"] = None
+                    print("cannot find metadata")
+            else:
+                raise ValueError("metadata is required for '1d gixos' loading.")
+
+
     else:
-        print("only 2d gixs or 1d gixos cut is supported")
+        print("only 2d gixs (PETRA III/P08) or 1d gixos cut (NSLS-II/12ID) is supported")
     
     if metadata is not None:
         try:
@@ -663,154 +640,6 @@ def remove_negative_2theta(GIXOSdata):
     return GIXOSdata
 
 
-def GIXOS_background_corr_old(sampledata, chamberbkg, bulkbkg_mode = None, bulkbkg_offset_lb = 0.9):
-    """
-    background correction, include
-    - chamber background subtraction
-    - wide angle (bulk) scattering background subtraction
-
-    Parameters
-    ----------
-    sampledata : dictionary
-        minimal field: Intensity, error, tt, tth, metadata
-    chamberbkg : dictionary
-        minimal field: Intensity, error, tt, tth, metadata
-        same shape as sampledata
-    bulkbkg_mode : string, optional
-        can be None, direct, constant, fit_q. The default is None.
-        None: no wide angle bkg subtraction
-        0: direct, using the direct wide angle line for substraction
-        1: constant, using a constant value for substraction
-        2: constant high beta: using an average over high beta data for subtraction
-        3: fit wide angle, fitting the wide angle over Q to be used as a wide angle bkg, requires alpha and wavelength in metadata of the sample
-            requires "Q" field in sampledata and chamberbkg
-    bulkbkg_offset_lb: float, optional
-        lower boundary for fitting the offset of the bulkbkg, as a factor to the average of the first 10 values of the bulkbkg GIXOS cut
-        default: 0.9
-    required metadata
-        chamber background subtraction: ['flux'], ['cttime']. Otherwise the sample and chamber will be considered to have same integrated flux
-        bulkbkg subtraction: 
-            - if wide angle is used (direct or fit), ['qxy_bkg'] must exist
-    
-    Returns
-    -------
-    correcteddata : TYPE
-        DESCRIPTION.
-
-    """
-    correcteddata = {   
-                        "Intensity": None
-                    }
-    bulkbkg = {   
-                        "Intensity": None
-                    }
-    I0_sample_bkg = 1.0
-    
-    if chamberbkg is None:
-        chamberbkg["Intensity"] = np.zeros((sampledata["Intensity"].shape[0], sampledata["Intensity"].shape[1]))
-    
-    # only the same shape can be treated
-    if sampledata["Intensity"].shape != chamberbkg["Intensity"].shape:
-        print("sampledata intensity matrix must have the same shape as the chamber bkg intensity matrix")
-        return
-        
-    # except for the intensity and error to be calculated, all others should be passed to the result 
-    for key in sampledata.keys() - ["Intensity", "error"]:
-        correcteddata[key] = sampledata[key]
-    
-    # normalisation factor for the integrated flux
-    if check_keys_numeric(["flux", "cttime_sample"], sampledata["metadata"]["measurements"]) and check_keys_numeric(["flux", "cttime_bkg"], chamberbkg["metadata"]["measurements"]):
-        I0_sample_bkg = sampledata["metadata"]["measurements"]["flux"]*sampledata["metadata"]["measurements"]["cttime_sample"] / (chamberbkg["metadata"]["measurements"]["flux"]*chamberbkg["metadata"]["measurements"]["cttime_bkg"])
-    else:
-        print("sample and chamber bkg are considered to have the same flux and counting time")
-    
-    # step 1: subtract chamber bkg
-    data_chamber_subtracted = sampledata["Intensity"] - chamberbkg["Intensity"]*I0_sample_bkg
-    err_propogate = np.sqrt(sampledata["error"]**2 + chamberbkg["error"]**2 * I0_sample_bkg**2)
-    
-    # step 2, different mode of bulk bkg subtraction
-    if bulkbkg_mode is None:
-        # no bulk subtraction
-        print("no bulkbkg subtraction")
-        correcteddata["Intensity"] = data_chamber_subtracted
-        correcteddata["error"] = err_propogate
-    elif isinstance(bulkbkg_mode, numbers.Number):
-        # if given a number, subtract a constant
-        print("cosntant bulk bkg")
-        correcteddata["Intensity"] = data_chamber_subtracted - bulkbkg_mode
-        correcteddata["error"] = err_propogate
-        bulkbkg["Intensity"] = bulkbkg_mode
-        bulkbkg["Intensity_at_GIXOS"] = bulkbkg_mode*np.ones((correcteddata["Intensity"].shape[0],correcteddata["Intensity"].shape[1]))
-        correcteddata["bulkbkg"] = bulkbkg
-    elif bulkbkg_mode in ["direct", "fit"]:
-        # if wide angle data exist, subtract the wide angle, either directly using line cut, or using fit over q
-        qxy0_idx_arr = np.where(sampledata["metadata"]["qxy0"] > sampledata["metadata"]["qxy_bkg"])[0]  # get the array of the wide angle column
-        if len(qxy0_idx_arr) == 0:
-            print("bkg qxy0 is smaller than the largest qxy0 position. No bulk bkg subtraction")
-            correcteddata["Intensity"] = data_chamber_subtracted
-            correcteddata["error"] = err_propogate
-            return
-        else:
-            bulk_qxy0_idx = qxy0_idx_arr
-            bulkbkg["Intensity"] = np.mean(np.atleast_2d(data_chamber_subtracted[:, bulk_qxy0_idx]), axis = 1)   # average the wide angle intensity over those qxy0
-            bulkbkg["error"] = np.sqrt( np.sum(np.atleast_2d(err_propogate[:, bulk_qxy0_idx]**2), axis = 1) ) /len(bulk_qxy0_idx)
-            # populate the axises for the bulkbkg
-            bulkbkg["tth"] = np.mean(np.atleast_2d(correcteddata["tth"][0,bulk_qxy0_idx]), axis = 1)
-            # tt can be a vector array (rebinned) or a matrix (not rebinned)
-            if correcteddata["tt"].ndim>1:
-                bulkbkg["tt"] = np.mean(np.atleast_2d(correcteddata["tt"][:,bulk_qxy0_idx]), axis = 1)
-            else:
-                bulkbkg["tt"] = correcteddata["tt"]
-            if "Q" in correcteddata:
-                # because it is not necessarily required to have Q axises
-                bulkbkg["Qxy"] = np.mean(np.atleast_2d(correcteddata["Qxy"][:,bulk_qxy0_idx]), axis = 1)
-                bulkbkg["Qz"] = np.mean(np.atleast_2d(correcteddata["Qz"][:,bulk_qxy0_idx]), axis = 1)
-                bulkbkg["Q"] = np.mean(np.atleast_2d(correcteddata["Q"][:,bulk_qxy0_idx]), axis = 1)
-            
-            # two modes of bkg
-            if bulkbkg_mode == "direct":
-                # directly subtract wide angle linecut
-                bulkbkg["Intensity_at_GIXOS"] = np.outer(bulkbkg["Intensity"],np.ones((1,bulk_qxy0_idx[0])))
-                correcteddata["Intensity"] = data_chamber_subtracted[:,:bulk_qxy0_idx[0]] - bulkbkg["Intensity_at_GIXOS"]
-                correcteddata["error"] = np.sqrt(err_propogate[:,:bulk_qxy0_idx[0]]**2 + (np.outer(bulkbkg["error"],np.ones((1,bulk_qxy0_idx[0]))))**2)
-                correcteddata["bulkbkg"] = bulkbkg
-            else:
-                # subtract the fit
-                if "Q" in correcteddata:
-                    bulkbkg_Q = np.mean(np.atleast_2d(correcteddata["Q"][:, bulk_qxy0_idx]), axis = 1) # this is the q axis
-                    # exclude the lowest 10% of the Q range
-                    Q_cut = np.min(bulkbkg_Q) + 0.1 * (np.max(bulkbkg_Q) - np.min(bulkbkg_Q))
-                    mask = bulkbkg_Q >= Q_cut
-                    # fit Q
-                    res = bulkbkg_fit(bulkbkg_Q[mask], bulkbkg["Intensity"][mask], y0_bounds=(np.mean(bulkbkg["Intensity"][mask][0:10],axis=0)*bulkbkg_offset_lb, np.inf))   # or (200, np.inf) if you want
-                    bulkbkg_y0, bulkbkg_F, bulkbkg_t = res["popt"]
-                    print("y0: %f\nF: %f\nt: %f\n" %(bulkbkg_y0, bulkbkg_F, bulkbkg_t))
-                    # optional plot
-                    bulkbkg_plot_fit(res)
-                    # load result into the bulkbkg
-                    bulkbkg["fit_params"] = {'y0': bulkbkg_y0, 'F': bulkbkg_F, 't': bulkbkg_t}
-                    bulkbkg['Intensity_at_GIXOS'] = bulkbkg_predict(correcteddata["Q"][:,:bulk_qxy0_idx[0]], res['popt'])
-                    # subtract bulk bkg for every GIXOS cut
-                    correcteddata["Intensity"] = data_chamber_subtracted[:,:bulk_qxy0_idx[0]] - bulkbkg['Intensity_at_GIXOS']
-                    correcteddata["error"] = err_propogate[:,:bulk_qxy0_idx[0]]
-                    
-                    correcteddata['bulkbkg'] = bulkbkg
-                else:
-                    print("input data requires Q axis")
-            
-            correcteddata["tth"] = np.delete(correcteddata["tth"], np.s_[bulk_qxy0_idx], axis=1)
-            if correcteddata["tt"].ndim>1:
-                correcteddata["tt"] = np.delete(correcteddata["tt"], np.s_[bulk_qxy0_idx], axis=1)
-            if "Q" in correcteddata:
-                correcteddata["Qxy"] = np.delete(correcteddata["Qxy"], np.s_[bulk_qxy0_idx], axis=1)
-                correcteddata["Qz"] = np.delete(correcteddata["Qz"], np.s_[bulk_qxy0_idx], axis=1)
-                correcteddata["Q"] = np.delete(correcteddata["Q"], np.s_[bulk_qxy0_idx], axis=1)
-    else:
-        print("please give the bulk mode among constant number, 'direct' or 'fit', or ignore it for no bulk background subtraction")
-        
-    
-    return correcteddata
-
 def GIXOS_background_corr(
                             sampledata,
                             chamberbkg,
@@ -867,18 +696,25 @@ def GIXOS_background_corr(
         Method used to determine the constant background when
         `bulkbkg_mode == 0`:
 
-        - 0 : use user-provided scalar `bulkbkg_value`
-        - 1 : use the average intensity for data with
-              Qz >= `bulkbkg_const_qz_lb`
-        - 2 : use the average of the three minimum intensities
-              for data with Qz > 3*Qc
+        - 0 : use user-provided `bulkbkg_value`
+              This may be either:
+              * a single scalar applied to all columns, or
+              * an array-like of length m, giving one constant per column
+        - 1 : determine one constant per column from the average intensity
+              for data with Qz >= `bulkbkg_const_qz_lb`
+        - 2 : determine one constant per column from the average of the
+              three minimum intensities for data with Qz > 3*Qc
 
         Ignored unless `bulkbkg_mode == 0`.
         Default is 0.
 
     bulkbkg_value : float, optional
-        Constant background value to subtract when
+        Constant background value(s) to subtract when
         `bulkbkg_mode == 0` and `bulkbkg_const_mode == 0`.
+        
+        This can be either:
+        - a scalar, applied to all columns
+        - an array-like of length m, giving one constant per column
 
     bulkbkg_offset_lb : float, optional
         Lower-bound factor for the offset parameter y0 in the
@@ -947,12 +783,25 @@ def GIXOS_background_corr(
                     "bulkbkg_value must be provided when bulkbkg_mode == 0 "
                     "and bulkbkg_const_mode == 0."
                 )
-            if np.ndim(bulkbkg_value) != 0:
-                raise ValueError("bulkbkg_value must be a scalar.")
-            try:
-                bulkbkg_value = float(bulkbkg_value)
-            except (TypeError, ValueError):
-                raise ValueError("bulkbkg_value must be numeric.")
+
+            ncols = sampledata["Intensity"].shape[1]
+
+            if np.ndim(bulkbkg_value) == 0:
+                try:
+                    bulkbkg_value = float(bulkbkg_value)
+                except (TypeError, ValueError):
+                    raise ValueError("bulkbkg_value must be numeric.")
+            else:
+                try:
+                    bulkbkg_value = np.asarray(bulkbkg_value, dtype=float).ravel()
+                except (TypeError, ValueError):
+                    raise ValueError("bulkbkg_value must be numeric.")
+
+                if bulkbkg_value.shape[0] != ncols:
+                    raise ValueError(
+                        f"When bulkbkg_value is array-like, it must have length {ncols} "
+                        "(one value per column)."
+                    )
 
         elif bulkbkg_const_mode == 1:
             if "Qz" not in sampledata:
@@ -1074,11 +923,21 @@ def GIXOS_background_corr(
         if bulkbkg_const_mode == 0:
             # user-provided scalar
             print("constant bulk background: user-provided value")
-            correcteddata["Intensity"] = data_chamber_subtracted - bulkbkg_value
+
+            nrows, ncols = data_chamber_subtracted.shape
+
+            if np.ndim(bulkbkg_value) == 0:
+                bulk_const = np.full(ncols, float(bulkbkg_value), dtype=float)
+            else:
+                bulk_const = np.asarray(bulkbkg_value, dtype=float).ravel()
+
+            bulkbkg_2d = np.outer(np.ones(nrows), bulk_const)   # shape (n, m)
+
+            correcteddata["Intensity"] = data_chamber_subtracted - bulkbkg_2d
             correcteddata["error"] = err_propogate
-            
-            bulkbkg["Intensity"] = bulkbkg_value
-            bulkbkg["Intensity_at_GIXOS"] = np.full_like(data_chamber_subtracted, bulkbkg_value, dtype=float)
+
+            bulkbkg["Intensity"] = bulk_const[None, :]          # shape (1, m)
+            bulkbkg["Intensity_at_GIXOS"] = bulkbkg_2d
             bulkbkg["const_mode"] = 0
             correcteddata["bulkbkg"] = bulkbkg
             
@@ -1102,8 +961,10 @@ def GIXOS_background_corr(
                     )
                 bulk_const[j] = np.mean(data_chamber_subtracted[mask, j])
             
-            bulkbkg["Intensity"] = bulk_const
-            bulkbkg["Intensity_at_GIXOS"] = np.outer(np.ones(data_chamber_subtracted.shape[0]), bulk_const)
+            bulkbkg_2d = np.outer(np.ones(data_chamber_subtracted.shape[0]), bulk_const)
+
+            bulkbkg["Intensity"] = bulk_const[None, :]   # shape (1, m)
+            bulkbkg["Intensity_at_GIXOS"] = bulkbkg_2d
             bulkbkg["const_mode"] = 1
             bulkbkg["const_qz_lb"] = bulkbkg_const_qz_lb
             
@@ -1133,8 +994,10 @@ def GIXOS_background_corr(
                     )
                 bulk_const[j] = np.mean(np.sort(vals)[:3])
             
-            bulkbkg["Intensity"] = bulk_const
-            bulkbkg["Intensity_at_GIXOS"] = np.outer(np.ones(data_chamber_subtracted.shape[0]), bulk_const)
+            bulkbkg_2d = np.outer(np.ones(data_chamber_subtracted.shape[0]), bulk_const)
+
+            bulkbkg["Intensity"] = bulk_const[None, :]   # shape (1, m)
+            bulkbkg["Intensity_at_GIXOS"] = bulkbkg_2d
             bulkbkg["const_mode"] = 2
             bulkbkg["const_qz_lb"] = qz_lb
             
@@ -1223,7 +1086,7 @@ def GIXOS_background_corr(
                 correcteddata["Q"] = np.delete(correcteddata["Q"], np.s_[bulk_qxy0_idx], axis=1)
         
         
-        return correcteddata
+    return correcteddata
        
 
 #%% analysis with eCWM
@@ -1418,6 +1281,7 @@ def GIXOS_qxy_dependence(
     else:
         kappa_use = float(kappa)
         results['fit_kappa'] = kappa_use
+        results['fit_kappa_err'] = 0
 
     # ---- build eCWM model with chosen kappa ----
     results['DS_eCWM'] = build_ds_for_kappa(kappa_use)
