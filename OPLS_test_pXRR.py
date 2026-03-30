@@ -14,15 +14,6 @@ from pseudo_xrr.eCWM import *
 from pseudo_xrr.data_io import *
 from pyinstrument import Profiler
 
-#%%
-#SF_file = "U:/external/2024/data/50000395/processed/gixos_analysis/no_kc/instrument_29599_SF.dat"
-R_file = "U:/external/2024/data/50000395/processed/gixos_analysis/no_kc/instrument_29599_R.dat"
-xrr_datafile = 'U:/external/2024/data/50000395/processed/xrr/R-29502-water_14400eV_run1-00c1f3aa.txt';
-
-#SF_ref = np.loadtxt(SF_file, skiprows=29)
-pxrr_ref = np.loadtxt(R_file, skiprows=28)
-xrr_ref = np.loadtxt(xrr_datafile, skiprows=1)
-
 #%% routine 2: directly load data from meta and GIXOS will be automatically extracted:
 GIXOSdata, GIXOSbkg = load_gixos_from_meta('./testing_data/OPLStest_gixos_metadata.yaml') 
 
@@ -59,22 +50,17 @@ plt.show()
 
 #%% from here on the operation will directly add results into the original dictionary variable (shared memory)
 #%% qxy dependence
-_, qxy_dependence_fit = GIXOS_qxy_dependence(GIXOS_ana, GIXOS_ana['metadata']['dependency']['qz_selected'], row_window=3, fit_kappa = False)
+_, qxy_dependence_fit = GIXOS_qxy_dependence(GIXOS_ana, GIXOS_ana['metadata']['dependency']['qz_selected'], row_window=3, fit_kappa = True)
 
 #%% processing pseudo
-_ = GIXOS2R(GIXOS_ana, transmission_corr = False, footprint_effect=False, use_approx=False)
-#%%
-rRF = np.column_stack((GIXOS_ana["Qz"][:,0], GIXOS_ana["r_reduced"] / GIXOS_ana["Qz"][:,0]**4 *16*pi**2 *math.sin(math.radians(GIXOS_ana["metadata"]['instrument']['alpha'])) *57**2))
+_ = GIXOS2R(GIXOS_ana, transmission_corr = True, footprint_effect=False, use_approx=False)
 #%%
 RFscaling_ref = GIXOS_ana["metadata"]['I0'] * GIXOS_ana["metadata"]['sample_params']['rho_b'] ** 2 / math.sin(math.radians(GIXOS_ana["metadata"]['instrument']['alpha'])) *GIXOS_ana['talpha_sqr']
 
 # Create the plot
 plt.figure()
-#plt.plot(SF_ref[:,0],SF_ref[:,1]/RFscaling_ref/ (pi / 180) ** 2, label = 'matlab structure factor')
 plt.errorbar(GIXOS_ana["refl"][:,0], GIXOS_ana["refl"][:,1]/GIXOS_ana["fresnel"][:,1], GIXOS_ana["refl"][:,2]/GIXOS_ana["fresnel"][:,1], fmt ='o', markersize = 1, capsize = 3, label = 'pseudoR')
-plt.plot(pxrr_ref[:,0],pxrr_ref[:,1]/(0.0218/2/pxrr_ref[:,0])**4/RFscaling_ref/ (pi / 180) ** 2, label = 'matlab pseudoR')
 plt.errorbar(GIXOS_ana["SF"][:,0], GIXOS_ana["SF"][:,1], GIXOS_ana["SF"][:,2], fmt ='o', markersize = 1, capsize = 3, label = 'structure factor')
-plt.plot(xrr_ref[:,0],xrr_ref[:,1]/(0.0218/2/xrr_ref[:,0])**4, label = 'specular xrr')
 # Set log10 scale on the y-axis
 plt.yscale('log')
 # Add labels and title
@@ -84,9 +70,3 @@ plt.ylim([1e-7, 10])
 plt.legend()
 plt.grid(True, which="both", ls="--", lw=0.5)
 plt.show()
-
-
-#%% work for qxy dependence
-# np.savetxt("D:/intensity.dat", qxy_dependence["I_sum"])
-# np.savetxt("D:/Qxy.dat", qxy_dependence["Qxy"])
-

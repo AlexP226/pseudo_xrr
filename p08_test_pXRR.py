@@ -89,7 +89,7 @@ plt.show()
 _, qxy_dependence_fit = GIXOS_qxy_dependence(GIXOS_ana, GIXOS_ana['metadata']['dependency']['qz_selected'], fit_kappa = True)
 
 #%% processing pseudo
-_ = GIXOS2R(GIXOS_ana, transmission_corr = True, footprint_effect=True, use_approx=True)
+_ = GIXOS2R(GIXOS_ana, transmission_corr = True, footprint_effect=True, use_approx=False)
 
 #%%
 RFscaling_ref = GIXOS_ana["metadata"]['I0'] * GIXOS_ana["metadata"]['sample_params']['rho_b'] ** 2 / math.sin(math.radians(GIXOS_ana["metadata"]['instrument']['alpha'])) *GIXOS_ana['talpha_sqr']
@@ -110,21 +110,6 @@ plt.legend()
 plt.grid(True, which="both", ls="--", lw=0.5)
 plt.show()
 
-#%% test rectangular slit
-xrrqz = GIXOS_ana["refl"][:,0]
-Psi_slit_approx = calc_eCWM_roughness_factor_SP(xrrqz, 
-    energy=14400,
-    sdd=1039.9,
-    resolution_mode=1,
-    resolution=[0.33,0.5],
-    bkg_mode=0,
-    bkg_off= 1,
-    tension=0.038,
-    temp=295,
-    kappa=15,
-    amin=5,
-    use_approx=True)
-sigma_slit_approx = np.sqrt(-1/xrrqz**2*np.log(Psi_slit_approx))
 
 #%% work for qxy dependence
 # np.savetxt("D:/intensity.dat", qxy_dependence["I_sum"])

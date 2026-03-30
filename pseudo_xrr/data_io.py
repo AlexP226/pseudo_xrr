@@ -153,8 +153,9 @@ def load_gixos_from_meta(yaml_path: str):
         # checking facility otherwise raise error
         if meta["facility"] == "PETRA III/P08":
             filepattern = f"{sample}_{scan:05d}_angle"
+            bkgfilepattern = f"{bkgsample}_{bkgscan:05d}_angle"
             importGIXOSdata = load_data(filepattern, path, metadata = yaml_path, datatype=datatype)
-            importbkg = load_data(filepattern, path, metadata = yaml_path, datatype=datatype)
+            importbkg = load_data(bkgfilepattern, path, metadata = yaml_path, datatype=datatype)
         else:
             raise ValueError(
                 "2d gixs mode has only been implemented for PETRA III/P08 'Langmuir GID setup'"

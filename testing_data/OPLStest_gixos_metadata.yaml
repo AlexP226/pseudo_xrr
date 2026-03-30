@@ -13,12 +13,9 @@ paths:
 measurements:
     sample:      "instrument"
     scan:        [30834, 30836, 30838, 30840, 30842,30844]
-    #scan:        [29599,29601,29603,29605,29607,29609]
     bkgsample:   "instrument"
     bkgscan:     [30835, 30837, 30839, 30841, 30843,30845]
-    #bkgscan:     [29600, 29602,29604,29606,29608,29610]
-    #flux:          2.7E11 # ct/s
-    flux:          50E11 # ct/s
+    flux:          2.7E11 # ct/s
     cttime_sample: 1 # seconds
     cttime_bkg:    1 # seconds
 
@@ -35,14 +32,14 @@ qxy0: [0.04,0.05,0.06,0.08,0.1,0.15]
 DSpxHW:  3.5
 
 PseudoR:
-    qxy0_select_idx: 1
+    qxy0_select_idx: 0
     # resolution_mode 0: circular size [1/A], 1: slit, size [mm]
     resolution_mode: 1      #
     resolution_HW:  [0.33,0.5]  # mode=0: float, mode=1: [v_HW, h_HW]
     # the following are option, only relevant at slit resolution mode (resolution_mode = 1)
     energy: 14400            # [eV], None, or float
     Ddet: 1039.9              # [mm]
-    bkg_mode: 1          # None, 0: phi (h) off, 1: beta (v) off
+    bkg_mode: 0          # None, 0: phi (h) off, 1: beta (v) off
     bkg_off:  1          # [mm], center from specular
 
 sample_params:

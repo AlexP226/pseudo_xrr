@@ -33,7 +33,7 @@ DSpxHW:  6
 qxy_bkg: 0.3
 
 PseudoR:
-    qxy0_select_idx: 5
+    qxy0_select_idx: 4
     # resolution_mode 0: circular size [1/A], 1: slit, size [mm]
     resolution_mode: 0      #
     resolution_HW:  0.0002  # mode=0: float, mode=1: [v_HW, h_HW]
