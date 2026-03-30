@@ -78,7 +78,7 @@ plt.plot(GIXOS_ana["tt"], GIXOS_ana["bulkbkg"]["Intensity_at_GIXOS"][:,2])
 # Add labels and title
 plt.xlabel("X values")
 plt.ylabel("Y values (log scale)")
-plt.ylim([0, 20000])
+plt.ylim([0, np.max(GIXOSdata["Intensity"][20:,2])*2])
 plt.legend()
 plt.grid(True, which="both", ls="--", lw=0.5)
 plt.show()
