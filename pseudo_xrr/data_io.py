@@ -663,7 +663,7 @@ def remove_negative_2theta(GIXOSdata):
     return GIXOSdata
 
 
-def GIXOS_background_corr(sampledata, chamberbkg, bulkbkg_mode = None, bulkbkg_offset_lb = 0.9):
+def GIXOS_background_corr_old(sampledata, chamberbkg, bulkbkg_mode = None, bulkbkg_offset_lb = 0.9):
     """
     background correction, include
     - chamber background subtraction
@@ -811,6 +811,420 @@ def GIXOS_background_corr(sampledata, chamberbkg, bulkbkg_mode = None, bulkbkg_o
     
     return correcteddata
 
+def GIXOS_background_corr(
+                            sampledata,
+                            chamberbkg,
+                            bulkbkg_mode=None,
+                            bulkbkg_const_mode=0,
+                            bulkbkg_value=None,
+                            bulkbkg_const_qz_lb=None,
+                            bulkbkg_offset_lb=0.9,
+                            bulkbkg_fit_qz_lb=None,
+                        ):
+    
+    """
+    Correct GIXOS data for chamber and bulk background.
+
+    The correction is applied in two steps:
+
+    1. Chamber background subtraction
+       The chamber background is subtracted from the sample intensity.
+       If flux and counting-time metadata are available, the chamber
+       background is scaled accordingly before subtraction.
+
+    2. Bulk (wide-angle) background subtraction
+       A second background contribution can optionally be removed using
+       one of several bulk-background models controlled by `bulkbkg_mode`.
+
+    Parameters
+    ----------
+    sampledata : dict
+        Sample GIXOS data dictionary. Required fields:
+        - "Intensity"
+        - "error"
+        - "tt"
+        - "tth"
+        - "metadata"
+
+        Some bulk-background modes also require:
+        - "Q"
+        - "Qz"
+        - "Qxy"
+
+    chamberbkg : dict or None
+        Chamber background data dictionary with the same shape as `sampledata`.
+        If None, chamber background is assumed to be zero.
+
+    bulkbkg_mode : None or int, optional
+        Bulk-background subtraction mode:
+
+        - None : no bulk background subtraction
+        - 0    : constant bulk background subtraction
+        - 1    : direct subtraction using wide-angle column(s)
+        - 2    : fit wide-angle background in Q and subtract the fitted curve
+
+    bulkbkg_const_mode : int, optional
+        Method used to determine the constant background when
+        `bulkbkg_mode == 0`:
+
+        - 0 : use user-provided scalar `bulkbkg_value`
+        - 1 : use the average intensity for data with
+              Qz >= `bulkbkg_const_qz_lb`
+        - 2 : use the average of the three minimum intensities
+              for data with Qz > 3*Qc
+
+        Ignored unless `bulkbkg_mode == 0`.
+        Default is 0.
+
+    bulkbkg_value : float, optional
+        Constant background value to subtract when
+        `bulkbkg_mode == 0` and `bulkbkg_const_mode == 0`.
+
+    bulkbkg_offset_lb : float, optional
+        Lower-bound factor for the offset parameter y0 in the
+        bulk-background fit. The lower bound is defined as
+
+            mean(first 10 fit points) * bulkbkg_offset_lb
+
+        Used only when `bulkbkg_mode == 2`.
+        Default is 0.9.
+
+    bulkbkg_fit_qz_lb : float or None, optional
+        Lower Qz boundary for the fit region when `bulkbkg_mode == 2`.
+        If None, the default internal lower-Q cutoff is used.
+
+    bulkbkg_const_qz_lb : float or None, optional
+        Lower Qz boundary used when
+        `bulkbkg_mode == 0` and `bulkbkg_const_mode == 1`.
+        The constant background is estimated from the average intensity
+        above this Qz value.
+
+    Returns
+    -------
+    correcteddata : dict
+        Corrected GIXOS data dictionary. It preserves the non-intensity
+        fields from `sampledata` and adds corrected:
+        - "Intensity"
+        - "error"
+
+        If a bulk background is subtracted, a "bulkbkg" field is also added,
+        containing the estimated or fitted bulk-background information.
+
+    Notes
+    -----
+    Chamber-background normalization uses metadata if available:
+    - sampledata["metadata"]["measurements"]["flux"]
+    - sampledata["metadata"]["measurements"]["cttime_sample"]
+    - chamberbkg["metadata"]["measurements"]["flux"]
+    - chamberbkg["metadata"]["measurements"]["cttime_bkg"]
+
+    For bulk-background subtraction:
+    - modes 1 and 2 require:
+      sampledata["metadata"]["qxy0"] and sampledata["metadata"]["qxy_bkg"]
+    - mode 2 requires:
+      sampledata["Q"]
+    - constant mode 1 requires:
+      sampledata["Qz"]
+    - constant mode 2 requires:
+      sampledata["Qz"] and sampledata["metadata"]["sample_params"]["Qc"]
+
+    """    
+    # ------------------------------------------------------------
+    # validate bulk-background mode and related inputs
+    # ------------------------------------------------------------
+    if bulkbkg_mode not in (None, 0, 1, 2):
+        raise ValueError("bulkbkg_mode must be one of None, 0, 1, 2.")
+
+    if bulkbkg_mode == 0:
+        if bulkbkg_const_mode not in (0, 1, 2):
+            raise ValueError(
+                "bulkbkg_const_mode must be one of 0, 1, 2 when bulkbkg_mode == 0."
+            )
+
+        if bulkbkg_const_mode == 0:
+            if bulkbkg_value is None:
+                raise ValueError(
+                    "bulkbkg_value must be provided when bulkbkg_mode == 0 "
+                    "and bulkbkg_const_mode == 0."
+                )
+            if np.ndim(bulkbkg_value) != 0:
+                raise ValueError("bulkbkg_value must be a scalar.")
+            try:
+                bulkbkg_value = float(bulkbkg_value)
+            except (TypeError, ValueError):
+                raise ValueError("bulkbkg_value must be numeric.")
+
+        elif bulkbkg_const_mode == 1:
+            if "Qz" not in sampledata:
+                raise ValueError(
+                    "sampledata['Qz'] is required when bulkbkg_mode == 0 "
+                    "and bulkbkg_const_mode == 1."
+                )
+            if bulkbkg_const_qz_lb is None:
+                raise ValueError(
+                    "bulkbkg_const_qz_lb must be provided when bulkbkg_const_mode == 1."
+                )
+            if np.ndim(bulkbkg_const_qz_lb) != 0:
+                raise ValueError("bulkbkg_const_qz_lb must be a scalar.")
+            try:
+                bulkbkg_const_qz_lb = float(bulkbkg_const_qz_lb)
+            except (TypeError, ValueError):
+                raise ValueError("bulkbkg_const_qz_lb must be numeric.")
+
+        elif bulkbkg_const_mode == 2:
+            if "Qz" not in sampledata:
+                raise ValueError(
+                    "sampledata['Qz'] is required when bulkbkg_mode == 0 "
+                    "and bulkbkg_const_mode == 2."
+                )
+            if (
+                "metadata" not in sampledata or
+                sampledata["metadata"] is None or
+                "sample_params" not in sampledata["metadata"] or
+                "Qc" not in sampledata["metadata"]["sample_params"] or
+                sampledata["metadata"]["sample_params"]["Qc"] is None
+            ):
+                raise ValueError(
+                    "sampledata['metadata']['sample_params']['Qc'] is required "
+                    "when bulkbkg_const_mode == 2."
+                )
+
+    elif bulkbkg_mode == 1:
+        if (
+            "metadata" not in sampledata or
+            sampledata["metadata"] is None or
+            "qxy0" not in sampledata["metadata"] or
+            "qxy_bkg" not in sampledata["metadata"]
+        ):
+            raise ValueError(
+                "sampledata['metadata']['qxy0'] and sampledata['metadata']['qxy_bkg'] "
+                "are required when bulkbkg_mode == 1."
+            )
+
+    elif bulkbkg_mode == 2:
+        if (
+            "metadata" not in sampledata or
+            sampledata["metadata"] is None or
+            "qxy0" not in sampledata["metadata"] or
+            "qxy_bkg" not in sampledata["metadata"]
+        ):
+            raise ValueError(
+                "sampledata['metadata']['qxy0'] and sampledata['metadata']['qxy_bkg'] "
+                "are required when bulkbkg_mode == 2."
+            )
+        if "Q" not in sampledata:
+            raise ValueError("sampledata['Q'] is required when bulkbkg_mode == 2.")
+
+        if bulkbkg_fit_qz_lb is not None:
+            if np.ndim(bulkbkg_fit_qz_lb) != 0:
+                raise ValueError("bulkbkg_fit_qz_lb must be a scalar.")
+            try:
+                bulkbkg_fit_qz_lb = float(bulkbkg_fit_qz_lb)
+            except (TypeError, ValueError):
+                raise ValueError("bulkbkg_fit_qz_lb must be numeric.")
+                
+    # -------------------------------------------------------------------------
+    # start background correction
+    # -------------------------------------------------------------------------
+    # set disctionary 
+    correcteddata = {   
+                        "Intensity": None
+                    }
+    bulkbkg = {   
+                        "Intensity": None
+                    }
+    
+    # -------------------------------------------------------------------------
+    # chamber background ubstraction
+    # -------------------------------------------------------------------------
+    I0_sample_bkg = 1.0
+    if chamberbkg is None:
+        chamberbkg["Intensity"] = np.zeros((sampledata["Intensity"].shape[0], sampledata["Intensity"].shape[1]))
+    
+    # only the same shape can be treated
+    if sampledata["Intensity"].shape != chamberbkg["Intensity"].shape:
+        print("sampledata intensity matrix must have the same shape as the chamber bkg intensity matrix")
+        return
+        
+    # except for the intensity and error to be calculated, all others should be passed to the result 
+    for key in sampledata.keys() - ["Intensity", "error"]:
+        correcteddata[key] = sampledata[key]
+    
+    # normalisation factor for the integrated flux
+    if check_keys_numeric(["flux", "cttime_sample"], sampledata["metadata"]["measurements"]) and check_keys_numeric(["flux", "cttime_bkg"], chamberbkg["metadata"]["measurements"]):
+        I0_sample_bkg = sampledata["metadata"]["measurements"]["flux"]*sampledata["metadata"]["measurements"]["cttime_sample"] / (chamberbkg["metadata"]["measurements"]["flux"]*chamberbkg["metadata"]["measurements"]["cttime_bkg"])
+    else:
+        print("sample and chamber bkg are considered to have the same flux and counting time")
+    
+    # subtract chamber bkg
+    data_chamber_subtracted = sampledata["Intensity"] - chamberbkg["Intensity"]*I0_sample_bkg
+    err_propogate = np.sqrt(sampledata["error"]**2 + chamberbkg["error"]**2 * I0_sample_bkg**2)
+                    
+    # -------------------------------------------------------------------------
+    # bulk background subtraction
+    # -------------------------------------------------------------------------
+    if bulkbkg_mode is None:
+        # no bulk subtraction
+        print("no bulkbkg subtraction")
+        correcteddata["Intensity"] = data_chamber_subtracted
+        correcteddata["error"] = err_propogate
+        
+    elif bulkbkg_mode == 0:
+        # constant background
+        if bulkbkg_const_mode == 0:
+            # user-provided scalar
+            print("constant bulk background: user-provided value")
+            correcteddata["Intensity"] = data_chamber_subtracted - bulkbkg_value
+            correcteddata["error"] = err_propogate
+            
+            bulkbkg["Intensity"] = bulkbkg_value
+            bulkbkg["Intensity_at_GIXOS"] = np.full_like(data_chamber_subtracted, bulkbkg_value, dtype=float)
+            bulkbkg["const_mode"] = 0
+            correcteddata["bulkbkg"] = bulkbkg
+            
+        elif bulkbkg_const_mode == 1:
+            # mean above Qz threshold
+            
+            print("constant bulk background: average above Qz lower bound")
+            
+            qz_data = sampledata["Qz"]
+            if qz_data.ndim == 1:
+                qz_data = qz_data[:, None]
+            
+            ncols = data_chamber_subtracted.shape[1]
+            bulk_const = np.zeros(ncols)
+            
+            for j in range(ncols):
+                mask = qz_data[:, j] >= bulkbkg_const_qz_lb
+                if np.count_nonzero(mask) == 0:
+                    raise ValueError(
+                        f"No data points satisfy Qz >= {bulkbkg_const_qz_lb} for column {j}."
+                    )
+                bulk_const[j] = np.mean(data_chamber_subtracted[mask, j])
+            
+            bulkbkg["Intensity"] = bulk_const
+            bulkbkg["Intensity_at_GIXOS"] = np.outer(np.ones(data_chamber_subtracted.shape[0]), bulk_const)
+            bulkbkg["const_mode"] = 1
+            bulkbkg["const_qz_lb"] = bulkbkg_const_qz_lb
+            
+            correcteddata["Intensity"] = data_chamber_subtracted - bulkbkg["Intensity_at_GIXOS"]
+            correcteddata["error"] = err_propogate
+            correcteddata["bulkbkg"] = bulkbkg
+            
+        elif bulkbkg_const_mode == 2:
+            # mean of 3 minima above 3*Qc
+            
+            print("constant bulk background: mean of 3 minima above 3Qc")
+            
+            qz_data = sampledata["Qz"]
+            if qz_data.ndim == 1:
+                qz_data = qz_data[:, None]
+            
+            qz_lb = 3.0 * sampledata["metadata"]["sample_params"]["Qc"]
+            ncols = data_chamber_subtracted.shape[1]
+            bulk_const = np.zeros(ncols)
+            
+            for j in range(ncols):
+                mask = qz_data[:, j] > qz_lb
+                vals = data_chamber_subtracted[mask, j]
+                if vals.size < 3:
+                    raise ValueError(
+                        f"Fewer than 3 points satisfy Qz > 3Qc for column {j}."
+                    )
+                bulk_const[j] = np.mean(np.sort(vals)[:3])
+            
+            bulkbkg["Intensity"] = bulk_const
+            bulkbkg["Intensity_at_GIXOS"] = np.outer(np.ones(data_chamber_subtracted.shape[0]), bulk_const)
+            bulkbkg["const_mode"] = 2
+            bulkbkg["const_qz_lb"] = qz_lb
+            
+            correcteddata["Intensity"] = data_chamber_subtracted - bulkbkg["Intensity_at_GIXOS"]
+            correcteddata["error"] = err_propogate
+            correcteddata["bulkbkg"] = bulkbkg
+    
+    else:
+        # if wide angle data exist, subtract the wide angle, either directly using line cut, or using fit over q
+        qxy0_idx_arr = np.where(sampledata["metadata"]["qxy0"] > sampledata["metadata"]["qxy_bkg"])[0]  # get the array of the wide angle column
+        if len(qxy0_idx_arr) == 0:
+            print("bkg qxy0 is larger than the largest qxy0 position. No bulk bkg subtraction")
+            correcteddata["Intensity"] = data_chamber_subtracted
+            correcteddata["error"] = err_propogate
+            return        
+        else:
+            bulk_qxy0_idx = qxy0_idx_arr
+            bulkbkg["Intensity"] = np.mean(np.atleast_2d(data_chamber_subtracted[:, bulk_qxy0_idx]), axis = 1)   # average the wide angle intensity over those qxy0
+            bulkbkg["error"] = np.sqrt( np.sum(np.atleast_2d(err_propogate[:, bulk_qxy0_idx]**2), axis = 1) ) /len(bulk_qxy0_idx)
+            # populate the axises for the bulkbkg
+            bulkbkg["tth"] = np.mean(np.atleast_2d(correcteddata["tth"][0,bulk_qxy0_idx]), axis = 1)
+            # tt can be a vector array (rebinned) or a matrix (not rebinned)
+            if correcteddata["tt"].ndim>1:
+                bulkbkg["tt"] = np.mean(np.atleast_2d(correcteddata["tt"][:,bulk_qxy0_idx]), axis = 1)
+            else:
+                bulkbkg["tt"] = correcteddata["tt"]
+            if "Q" in correcteddata:
+                # because it is not necessarily required to have Q axises
+                bulkbkg["Qxy"] = np.mean(np.atleast_2d(correcteddata["Qxy"][:,bulk_qxy0_idx]), axis = 1)
+                bulkbkg["Qz"] = np.mean(np.atleast_2d(correcteddata["Qz"][:,bulk_qxy0_idx]), axis = 1)
+                bulkbkg["Q"] = np.mean(np.atleast_2d(correcteddata["Q"][:,bulk_qxy0_idx]), axis = 1)
+            
+            # two modes of bkg
+            if bulkbkg_mode == 1:
+                # direct wide-angle subtraction
+                bulkbkg["Intensity_at_GIXOS"] = np.outer(bulkbkg["Intensity"],np.ones((1,bulk_qxy0_idx[0])))
+                correcteddata["Intensity"] = data_chamber_subtracted[:,:bulk_qxy0_idx[0]] - bulkbkg["Intensity_at_GIXOS"]
+                correcteddata["error"] = np.sqrt(err_propogate[:,:bulk_qxy0_idx[0]]**2 + (np.outer(bulkbkg["error"],np.ones((1,bulk_qxy0_idx[0]))))**2)
+                correcteddata["bulkbkg"] = bulkbkg
+            else:
+                # mode 2: fit wide-angle in Q
+                if "Q" in correcteddata:
+                    bulkbkg_Q = np.mean(np.atleast_2d(correcteddata["Q"][:, bulk_qxy0_idx]), axis = 1) # this is the q axis
+                    bulkbkg_Qz = np.mean(np.atleast_2d(correcteddata["Qz"][:, bulk_qxy0_idx]), axis=1)
+                    # choose fit range:
+                    # - default: exclude the lowest 10% of the Q range
+                    # - optional: start fitting from user-defined lower Qz boundary that is larger than the lowest 10%
+                    Q_cut = np.min(bulkbkg_Q) + 0.1 * (np.max(bulkbkg_Q) - np.min(bulkbkg_Q))
+                    
+                    if bulkbkg_fit_qz_lb is None:
+                        mask = bulkbkg_Q >= Q_cut
+                    else:
+                        mask = (bulkbkg_Q >= Q_cut) & (bulkbkg_Qz >= bulkbkg_fit_qz_lb)
+                    
+                    if np.count_nonzero(mask) < 3:
+                        raise ValueError("Not enough points remain in the selected bulk background fit range.")
+                    
+                    y0_lb = np.mean(bulkbkg["Intensity"][mask][:10], axis=0) * bulkbkg_offset_lb
+                    # fit Q
+                    res = bulkbkg_fit(
+                                        bulkbkg_Q[mask], 
+                                        bulkbkg["Intensity"][mask], 
+                                        y0_bounds=(y0_lb, np.inf)
+                                        )
+                    bulkbkg_y0, bulkbkg_F, bulkbkg_t = res["popt"]
+                    print("y0: %f\nF: %f\nt: %f\n" %(bulkbkg_y0, bulkbkg_F, bulkbkg_t))
+                    # optional plot
+                    bulkbkg_plot_fit(res)
+                    # load result into the bulkbkg
+                    bulkbkg["fit_params"] = {'y0': bulkbkg_y0, 'F': bulkbkg_F, 't': bulkbkg_t}
+                    bulkbkg['Intensity_at_GIXOS'] = bulkbkg_predict(correcteddata["Q"][:,:bulk_qxy0_idx[0]], res['popt'])
+                    # subtract bulk bkg for every GIXOS cut
+                    correcteddata["Intensity"] = data_chamber_subtracted[:,:bulk_qxy0_idx[0]] - bulkbkg['Intensity_at_GIXOS']
+                    correcteddata["error"] = err_propogate[:,:bulk_qxy0_idx[0]]
+                    
+                    correcteddata['bulkbkg'] = bulkbkg
+                else:
+                    print("input data requires Q axis")
+
+            correcteddata["tth"] = np.delete(correcteddata["tth"], np.s_[bulk_qxy0_idx], axis=1)
+            if correcteddata["tt"].ndim>1:
+                correcteddata["tt"] = np.delete(correcteddata["tt"], np.s_[bulk_qxy0_idx], axis=1)
+            if "Q" in correcteddata:
+                correcteddata["Qxy"] = np.delete(correcteddata["Qxy"], np.s_[bulk_qxy0_idx], axis=1)
+                correcteddata["Qz"] = np.delete(correcteddata["Qz"], np.s_[bulk_qxy0_idx], axis=1)
+                correcteddata["Q"] = np.delete(correcteddata["Q"], np.s_[bulk_qxy0_idx], axis=1)
+        
+        
+        return correcteddata
+       
 
 #%% analysis with eCWM
 def GIXOS_qxy_dependence(
@@ -1036,6 +1450,8 @@ def GIXOS_qxy_dependence(
             )
     GIXOSdict['qxy_dependence_ana'] = results
     GIXOSdict["metadata"]["sample_params"]["kappa"] =  results['fit_kappa']
+    GIXOSdict["metadata"]["sample_params"]["kappa_err"] =  results['fit_kappa_err']
+    GIXOSdict["metadata"]["sample_params"]["kappa_fit_success"] =  results['fit_success']
     return GIXOSdict, results
 
 def GIXOS_qxy_dependence_plot(results, *, show_refs=True, show_err = True, title=None):
@@ -1074,74 +1490,295 @@ def GIXOS_qxy_dependence_plot(results, *, show_refs=True, show_err = True, title
 # processing into SF and RRF
 def GIXOS2R(GIXOS, transmission_corr = False, footprint_effect = False, use_approx = False):
     """
-    name changed to GIXOS2R
-    use metadata imbedded in the input data, no DSbetaHW
-    input for calc_film_DS_RRF_integ: use DSphi_HW instead of DSqxy_HW, use tth instead of qxy0, use energy in eV instead of keV
-    
+    Convert GIXOS intensity into pseudo-reflectivity and structure factor.
+
+    This function converts a processed GIXOS dataset into:
+
+    - pseudo-reflectivity R(Qz)
+    - intrinsic structure factor |Phi(Qz)|^2
+
+    using the extended capillary wave model (eCWM). The conversion combines:
+
+    1. Fresnel reflectivity of the substrate/interface
+    2. optional transmission correction for the exit beam
+    3. optional footprint-induced Qz broadening
+    4. the eCWM roughness factors for diffuse and specular scattering
+
+    Internally, the function evaluates the reduced roughness-factor ratio
+    r_red = Psi_DS / Psi_R using `calc_eCWM_red_r(...)`, then uses it to
+    transform the measured diffuse scattering intensity into a pseudo-XRR
+    reflectivity and structure factor.
+
+    Parameters
+    ----------
+    GIXOS : dict
+        GIXOS dataset dictionary. It must contain at least:
+        - "Intensity"
+        - "error"
+        - "Qz"
+        - "tt"
+        - "tth"
+        - "HWtt"
+        - "HWtth"
+        - "metadata"
+
+        The embedded metadata must contain the sections:
+        - ["instrument"]
+        - ["sample_params"]
+        - ["PseudoR"]
+
+    transmission_corr : bool, optional
+        If True, apply transmission correction for the exit angle beta
+        using `calc_tbeta_sqr()`. Default is False.
+
+    footprint_effect : bool, optional
+        If True, calculate footprint-induced Qz broadening using
+        `GIXOS_dQz()`. Default is False.
+
+    use_approx : bool, optional
+        If True, use the approximate eCWM form in the roughness-factor
+        calculation. If False, use the more complete / accurate form.
+        Default is False.
+
+    Returns
+    -------
+    GIXOS : dict
+        The input dictionary with additional fields added, including:
+        - "fresnel"
+        - "talpha_sqr"
+        - "tbeta_sqr"
+        - "dQz"
+        - "r_reduced"
+        - "Psi_DS"
+        - "Psi_R"
+        - "prefactor_DS"
+        - "refl"
+        - "SF"
+
+    Notes
+    -----
+    The following metadata entries are required for the eCWM conversion:
+
+    In GIXOS["metadata"]["instrument"]:
+        - "alpha"   : incident angle in degrees
+        - "energy"  : x-ray energy in eV
+        - "Ddet"    : detector distance in mm (for some corrections)
+        - "footprint" : footprint in mm (if footprint_effect=True)
+
+    In GIXOS["metadata"]["sample_params"]:
+        - "Qc"          : critical Q
+        - "tension"     : surface tension [N/m]
+        - "temperature" : temperature [K]
+        - "kappa"       : bending rigidity [k_B T]
+        - "amin"        : molecular cutoff length [Å]
+
+    In GIXOS["metadata"]["PseudoR"]:
+        - "qxy0_select_idx"
+        - "resolution_mode"
+        - "resolution_HW"
+        - "energy"
+        - "Ddet"
+        - "bkg_mode"
+        - "bkg_off"
+
+    The pseudo-reflectivity and structure factor are derived from the
+    measured diffuse scattering intensity and should be interpreted within
+    the eCWM formalism used here.
     """
+    
+    # ------------------------------------------------------------
+    # Validate required metadata for pseudo-XRR / eCWM conversion
+    # ------------------------------------------------------------
+    if "metadata" not in GIXOS or GIXOS["metadata"] is None:
+        raise ValueError("GIXOS['metadata'] is required.")
+
+    meta = GIXOS["metadata"]
+
+    for section in ["instrument", "sample_params", "PseudoR"]:
+        if section not in meta or meta[section] is None:
+            raise ValueError(f"GIXOS['metadata']['{section}'] is required.")
+
+    inst = meta["instrument"]
+    samp = meta["sample_params"]
+    pr = meta["PseudoR"]
+
+    # optional keys that may not exist in metadata
+    pr.setdefault("energy", None)
+    pr.setdefault("Ddet", None)
+    pr.setdefault("bkg_mode", None)
+    pr.setdefault("bkg_off", None)
+
+    # always required in instrument
+    required_instrument = ["alpha", "energy"]
+
+    # always required in sample_params
+    required_sample = ["Qc", "tension", "temperature", "kappa", "amin"]
+
+    # always required in PseudoR
+    required_pseudor = ["qxy0_select_idx", "resolution_mode", "resolution_HW"]
+
+    for key in required_instrument:
+        if key not in inst or inst[key] is None:
+            raise ValueError(f"GIXOS['metadata']['instrument']['{key}'] is required.")
+
+    for key in required_sample:
+        if key not in samp or samp[key] is None:
+            raise ValueError(f"GIXOS['metadata']['sample_params']['{key}'] is required.")
+
+    for key in required_pseudor:
+        if key not in pr or pr[key] is None:
+            raise ValueError(f"GIXOS['metadata']['PseudoR']['{key}'] is required.")
+
+    # integer index check
+    try:
+        pr["qxy0_select_idx"] = int(pr["qxy0_select_idx"])
+    except (TypeError, ValueError):
+        raise ValueError("GIXOS['metadata']['PseudoR']['qxy0_select_idx'] must be an integer.")
+
+    # scalar numeric checks for always-required values
+    scalar_checks = {
+        "instrument.alpha": inst["alpha"],
+        "instrument.energy": inst["energy"],
+        "sample_params.Qc": samp["Qc"],
+        "sample_params.tension": samp["tension"],
+        "sample_params.temperature": samp["temperature"],
+        "sample_params.kappa": samp["kappa"],
+        "sample_params.amin": samp["amin"],
+    }
+
+    for name, value in scalar_checks.items():
+        if np.ndim(value) != 0:
+            raise ValueError(f"{name} must be a scalar.")
+        try:
+            float(value)
+        except (TypeError, ValueError):
+            raise ValueError(f"{name} must be numeric.")
+
+    # ----------------------------------------
+    # PseudoR conditional requirements
+    # ----------------------------------------
+    if pr["resolution_mode"] not in (0, 1):
+        raise ValueError("GIXOS['metadata']['PseudoR']['resolution_mode'] must be 0 or 1.")
+
+    if pr["bkg_mode"] not in (None, 0, 1):
+        raise ValueError("GIXOS['metadata']['PseudoR']['bkg_mode'] must be None, 0, or 1.")
+
+    # resolution depends on resolution_mode
+    if pr["resolution_mode"] == 0:
+        if np.ndim(pr["resolution_HW"]) != 0:
+            raise ValueError(
+                "For PseudoR resolution_mode == 0, metadata['PseudoR']['resolution_HW'] must be a scalar."
+            )
+        try:
+            pr["resolution_HW"] = float(pr["resolution_HW"])
+        except (TypeError, ValueError):
+            raise ValueError("metadata['PseudoR']['resolution_HW'] must be numeric.")
+
+    elif pr["resolution_mode"] == 1:
+        if pr["energy"] is None:
+            raise ValueError(
+                "metadata['PseudoR']['energy'] is required when resolution_mode == 1."
+            )
+        if pr["Ddet"] is None:
+            raise ValueError(
+                "metadata['PseudoR']['Ddet'] is required when resolution_mode == 1."
+            )
+
+        res = np.asarray(pr["resolution_HW"], dtype=float)
+        if res.shape != (2,):
+            raise ValueError(
+                "For PseudoR resolution_mode == 1, metadata['PseudoR']['resolution_HW'] must be length 2."
+            )
+        pr["resolution_HW"] = res
+
+        for key in ["energy", "Ddet"]:
+            if np.ndim(pr[key]) != 0:
+                raise ValueError(f"metadata['PseudoR']['{key}'] must be a scalar.")
+            try:
+                pr[key] = float(pr[key])
+            except (TypeError, ValueError):
+                raise ValueError(f"metadata['PseudoR']['{key}'] must be numeric.")
+
+    # background offset only needed when a background mode is used
+    if pr["bkg_mode"] in (0, 1):
+        if pr["bkg_off"] is None:
+            raise ValueError(
+                "metadata['PseudoR']['bkg_off'] is required when bkg_mode is 0 or 1."
+            )
+        if np.ndim(pr["bkg_off"]) != 0:
+            raise ValueError("metadata['PseudoR']['bkg_off'] must be a scalar.")
+        try:
+            pr["bkg_off"] = float(pr["bkg_off"])
+        except (TypeError, ValueError):
+            raise ValueError("metadata['PseudoR']['bkg_off'] must be numeric.")
+    
+    # -------------------------------------------------------------------------
+    # start calculation
+    # -------------------------------------------------------------------------
+    
     # surface scattering optics
-    GIXOS["fresnel"] = calc_fresnel(GIXOS["Qz"][:,GIXOS["metadata"]["PseudoR"]["qxy0_select_idx"]], GIXOS["metadata"]["sample_params"]["Qc"]) # check if fresnel == calc_fresnel      SAME
-    GIXOS["talpha_sqr"] = t_sqr(GIXOS["metadata"]["instrument"]["alpha"], GIXOS["metadata"]["instrument"]["energy"], qc = GIXOS["metadata"]["sample_params"]["Qc"])
+    GIXOS["fresnel"] = calc_fresnel(GIXOS["Qz"][:,pr["qxy0_select_idx"]], samp["Qc"]) # check if fresnel == calc_fresnel      SAME
+    GIXOS["talpha_sqr"] = t_sqr(inst["alpha"], inst["energy"], qc = samp["Qc"])
     #GIXOS["Qz_array"] = np.asarray(GIXOS ["Qz"]).reshape(-1, 1) # done to convert GIXOS ["Qz"] from a row vetor to a column vector for calc_tbeta_sqr
     # Qz should always be a column vector!
-    if footprint_effect and ("footprint" in GIXOS["metadata"]["instrument"]) and ("Ddet" in GIXOS["metadata"]["instrument"]) and ("alpha" in GIXOS["metadata"]["instrument"]) and ("energy" in GIXOS["metadata"]["instrument"]):
-        GIXOS["dQz"] = GIXOS_dQz(GIXOS["Qz"][:,GIXOS["metadata"]["PseudoR"]["qxy0_select_idx"]], GIXOS["metadata"]["instrument"]["energy"], GIXOS["metadata"]["instrument"]["alpha"], GIXOS["metadata"]["instrument"]["Ddet"], GIXOS["metadata"]["instrument"]["footprint"])     # Almost same, just not iterating through enough times(?) --> missing last row      SAME now
+    if footprint_effect and ("footprint" in inst) and ("Ddet" in inst) and ("alpha" in inst) and ("energy" in inst):
+        GIXOS["dQz"] = GIXOS_dQz(GIXOS["Qz"][:,pr["qxy0_select_idx"]], inst["energy"], inst["alpha"], inst["Ddet"], inst["footprint"])     # Almost same, just not iterating through enough times(?) --> missing last row      SAME now
     else:
         GIXOS["dQz"] = np.ones((len(GIXOS["tt"]),5))
         print("No footprint broadending calculation. For calculation: please set footprint_effect = True and provide the footprint [mm], detector distance Ddet [mm], incident angle alpha [deg] and energy [eV] in metadata field")
         
-    if transmission_corr and ("Ddet" in GIXOS["metadata"]["instrument"]) and ("alpha" in GIXOS["metadata"]["instrument"]) and ("energy" in GIXOS["metadata"]["instrument"]):
-        if footprint_effect and ("footprint" in GIXOS["metadata"]["instrument"]):
-            GIXOS["tbeta_sqr"] = calc_tbeta_sqr(GIXOS["tt"], GIXOS["metadata"]["sample_params"]["Qc"], GIXOS["metadata"]["instrument"]["energy"], GIXOS["metadata"]["instrument"]["alpha"], GIXOS["metadata"]["instrument"]["Ddet"], GIXOS["metadata"]["instrument"]["footprint"])  #  Mostly the same, but the 4th column starts to deviate from the MATLAB output by hundredths
+    if transmission_corr and ("Ddet" in inst) and ("alpha" in inst) and ("energy" in inst):
+        if footprint_effect and ("footprint" in inst):
+            GIXOS["tbeta_sqr"] = calc_tbeta_sqr(GIXOS["tt"], samp["Qc"], inst["energy"], inst["alpha"], inst["Ddet"], inst["footprint"])  #  Mostly the same, but the 4th column starts to deviate from the MATLAB output by hundredths
         else:
-            GIXOS["tbeta_sqr"] = calc_tbeta_sqr(GIXOS["tt"], GIXOS["metadata"]["sample_params"]["Qc"], GIXOS["metadata"]["instrument"]["energy"], GIXOS["metadata"]["instrument"]["alpha"], GIXOS["metadata"]["instrument"]["Ddet"], 0.1)  #  Mostly the same, but the 4th column starts to deviate from the MATLAB output by hundredths
+            GIXOS["tbeta_sqr"] = calc_tbeta_sqr(GIXOS["tt"], samp["Qc"], inst["energy"], inst["alpha"], inst["Ddet"], 0.1)  #  Mostly the same, but the 4th column starts to deviate from the MATLAB output by hundredths
     else:
         GIXOS["tbeta_sqr"] = np.ones((len(GIXOS["tt"]),4))
         print("no beta transmission correction. For correction: please set the transmission_corr = True and provide the detector distance Ddet [mm], incident angle alpha [deg] and energy [eV] in metadata field")
     
     if len(GIXOS["HWtt"])>1:
-        DSbetaHW = GIXOS["HWtt"][GIXOS["metadata"]["PseudoR"]["qxy0_select_idx"]]
-        DSphiHW = GIXOS["HWtth"][0,GIXOS["metadata"]["PseudoR"]["qxy0_select_idx"]]
+        DSbetaHW = GIXOS["HWtt"][pr["qxy0_select_idx"]]
+        DSphiHW = GIXOS["HWtth"][0,pr["qxy0_select_idx"]]
     else:
         DSbetaHW = GIXOS["HWtt"][0]
         DSphiHW = GIXOS["HWtth"][0,0]
     
     GIXOS["r_reduced"], GIXOS["Psi_DS"], GIXOS["Psi_R"] = calc_eCWM_red_r(
                                                                             GIXOS["tt"], 
-                                                                            GIXOS["tth"][0,GIXOS["metadata"]["PseudoR"]["qxy0_select_idx"]], 
-                                                                            alpha = GIXOS["metadata"]["instrument"]["alpha"], 
-                                                                            energy = GIXOS["metadata"]["instrument"]["energy"], 
+                                                                            GIXOS["tth"][0,pr["qxy0_select_idx"]], 
+                                                                            alpha = inst["alpha"], 
+                                                                            energy = inst["energy"], 
                                                                             DSphi_HWHM = DSphiHW, 
                                                                             DSbeta_HWHM = DSbetaHW, 
-                                                                            R_resolution_mode = GIXOS["metadata"]["PseudoR"]["resolution_mode"], 
-                                                                            R_resolution = GIXOS["metadata"]["PseudoR"]["resolution_HW"], 
-                                                                            R_energy = GIXOS["metadata"]["PseudoR"]["energy"], 
-                                                                            R_sdd = GIXOS["metadata"]["PseudoR"]["Ddet"], 
-                                                                            R_bkg_mode = GIXOS["metadata"]["PseudoR"]['bkg_mode'], 
-                                                                            R_bkg_off = GIXOS["metadata"]["PseudoR"]['bkg_off'], 
-                                                                            tension = GIXOS["metadata"]["sample_params"]["tension"], 
-                                                                            temp = GIXOS["metadata"]["sample_params"]["temperature"], 
-                                                                            kappa = GIXOS["metadata"]["sample_params"]["kappa"], 
-                                                                            amin = GIXOS["metadata"]["sample_params"]["amin"], 
+                                                                            R_resolution_mode = pr["resolution_mode"], 
+                                                                            R_resolution = pr["resolution_HW"], 
+                                                                            R_energy = pr["energy"], 
+                                                                            R_sdd = pr["Ddet"], 
+                                                                            R_bkg_mode = pr['bkg_mode'], 
+                                                                            R_bkg_off = pr['bkg_off'], 
+                                                                            tension = samp["tension"], 
+                                                                            temp = samp["temperature"], 
+                                                                            kappa = samp["kappa"], 
+                                                                            amin = samp["amin"], 
                                                                             use_approx=use_approx
                                                                             )    
     
     # prefactor for this qxy0
-    GIXOS['prefactor_DS'] = GIXOS["metadata"]["sample_params"]["Qc"]**4 * GIXOS["talpha_sqr"] * GIXOS["tbeta_sqr"][:, 3] / (2*GIXOS["Qz"][:,GIXOS["metadata"]["PseudoR"]["qxy0_select_idx"]])**4 
+    GIXOS['prefactor_DS'] = samp["Qc"]**4 * GIXOS["talpha_sqr"] * GIXOS["tbeta_sqr"][:, 3] / (2*GIXOS["Qz"][:,pr["qxy0_select_idx"]])**4 
     
     # computes reflectivity
     GIXOS["refl"] = np.column_stack([
-        GIXOS["Qz"][:,GIXOS["metadata"]["PseudoR"]["qxy0_select_idx"]],
-        GIXOS["Intensity"][:,GIXOS["metadata"]["PseudoR"]["qxy0_select_idx"]] / GIXOS["r_reduced"] * GIXOS["fresnel"][:, 1] / GIXOS["prefactor_DS"] / GIXOS["metadata"]["I0"],
-        GIXOS["error"][:,GIXOS["metadata"]["PseudoR"]["qxy0_select_idx"]] / GIXOS["r_reduced"] * GIXOS["fresnel"][:, 1] / GIXOS["prefactor_DS"] / GIXOS["metadata"]["I0"],
+        GIXOS["Qz"][:,pr["qxy0_select_idx"]],
+        GIXOS["Intensity"][:,pr["qxy0_select_idx"]] / GIXOS["r_reduced"] * GIXOS["fresnel"][:, 1] / GIXOS["prefactor_DS"] / GIXOS["metadata"]["I0"],
+        GIXOS["error"][:,pr["qxy0_select_idx"]] / GIXOS["r_reduced"] * GIXOS["fresnel"][:, 1] / GIXOS["prefactor_DS"] / GIXOS["metadata"]["I0"],
         GIXOS["dQz"][:, 4]
     ])
 
     # computes structure factor 
     GIXOS["SF"] = np.column_stack([
-        GIXOS["Qz"][:,GIXOS["metadata"]["PseudoR"]["qxy0_select_idx"]],
-        GIXOS["Intensity"][:,GIXOS["metadata"]["PseudoR"]["qxy0_select_idx"]] / GIXOS["Psi_DS"] / GIXOS["prefactor_DS"] / GIXOS["metadata"]["I0"],
-        GIXOS["error"][:,GIXOS["metadata"]["PseudoR"]["qxy0_select_idx"]] / GIXOS["Psi_DS"] / GIXOS["prefactor_DS"] / GIXOS["metadata"]["I0"],
+        GIXOS["Qz"][:,pr["qxy0_select_idx"]],
+        GIXOS["Intensity"][:,pr["qxy0_select_idx"]] / GIXOS["Psi_DS"] / GIXOS["prefactor_DS"] / GIXOS["metadata"]["I0"],
+        GIXOS["error"][:,pr["qxy0_select_idx"]] / GIXOS["Psi_DS"] / GIXOS["prefactor_DS"] / GIXOS["metadata"]["I0"],
         GIXOS["dQz"][:, 4]
     ])
     return GIXOS # outputs GIXOS with reflectivity and structure factor added as new columns

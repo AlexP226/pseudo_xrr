@@ -63,7 +63,7 @@ GIXOSbkg= remove_negative_2theta(GIXOSbkg)
 GIXOSdata_q = GIXOS_th2q(GIXOSdata)
 GIXOSbkg_q = GIXOS_th2q(GIXOSbkg)
 #% background subtraction
-GIXOS_ana = GIXOS_background_corr(GIXOSdata_q, GIXOSbkg_q, bulkbkg_mode = "fit", bulkbkg_offset_lb=0.9)
+GIXOS_ana = GIXOS_background_corr(GIXOSdata_q, GIXOSbkg_q, bulkbkg_mode = 2, bulkbkg_offset_lb=0.9)
 
 #%%
 # Create the plot
