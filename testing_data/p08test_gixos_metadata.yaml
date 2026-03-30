@@ -33,14 +33,20 @@ DSpxHW:  6
 
 PseudoR:
     qxy0_select_idx: 5
-    RqxyHW:  0.0002
+    # resolution_mode 0: circular size [1/A], 1: slit, size [mm]
+    resolution_mode: 0      #
+    resolution_HW:  0.0002  # mode=0: float, mode=1: [v_HW, h_HW]
+    # the following are option, only relevant at slit resolution mode (resolution_mode = 1)
+    energy:             # [eV], None, or float
+    Ddet:               # [mm]
+    bkg_mode:           # None, 0: phi (h) off, 1: beta (v) off
+    bkg_off:            # [mm], center from specular
 
 sample_params:
     Qc:       0.0218    # critical angle in 1/A
-    kb:          1.381e-23   # J/K
     tension:     0.038       # N/m
     temperature: 295        # K
-    kappa: 15   # kbT
+    kappa: 13   # kbT
     amin: 5     # molecular distance
 
 # For Dependency will need to add:

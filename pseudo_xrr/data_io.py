@@ -8,9 +8,10 @@ import os
 import platform
 from joblib import Parallel, delayed
 from scipy.integrate import dblquad
+from scipy.constants import pi, Boltzmann as kb
 from scipy.special import kv as besselk, jv as besselj, gamma
 from p08_GIXD.p08_GIXD import *
-from pseudo_xrr.eCWM import calc_fresnel, calc_tbeta_sqr, GIXOS_dQz, calc_eCWM_roughness_factor_DS, calc_eCWM_red_r
+from pseudo_xrr.eCWM import calc_fresnel, t_sqr, calc_tbeta_sqr, GIXOS_dQz, calc_eCWM_roughness_factor_DS, calc_eCWM_red_r
 from pseudo_xrr.bulkbkg import bulkbkg_fit, bulkbkg_plot_fit, bulkbkg_predict
 '''
 change oct.2025
@@ -114,10 +115,9 @@ def load_metadata(yaml_path: str):
     meta["measurements"]["bkgscan"] = np.array(meta["measurements"]["bkgscan"], dtype=int)
     meta["instrument"]["wavelength"] = 12404/meta["instrument"]["energy"]
     meta["qxy0"] = np.array(meta["qxy0"])
-    meta['tth']= np.degrees(np.arcsin(meta["qxy0"] * meta["instrument"]["wavelength"] / 4 / np.pi)) * 2
+    meta['tth']= np.degrees(np.arcsin(meta["qxy0"] * meta["instrument"]["wavelength"] / 4 / pi)) * 2
     meta["sample_params"]["rho_b"] = meta["sample_params"]["Qc"]**2/16/math.pi
     # RFscaling exactly as in the original script
-    meta['RFscaling'] = meta['measurements']['flux'] * meta['measurements']['cttime_sample'] * meta['sample_params']['rho_b'] ** 2 / math.sin(math.radians(meta['instrument']['alpha'])) * 4
     meta['I0'] = meta['measurements']['flux'] * meta['measurements']['cttime_sample']
         
     # # Raw parameters
@@ -152,12 +152,12 @@ def load_metadata(yaml_path: str):
 
     # # 
     # qxy0                   = np.array(meta["qxy0"])
-    # tth                    = np.degrees(np.arcsin(qxy0 * wavelength / 4 / np.pi)) * 2          # try as a list
+    # tth                    = np.degrees(np.arcsin(qxy0 * wavelength / 4 / pi)) * 2          # try as a list
     # qxy_bkg                = meta["qxy_bkg"]
     # DSpxHW                 = meta["DSpxHW"]
     # #DStthFW_px             = meta["DStthFW_px"]
     # #tth_roiHW_real         = DStthFW_px * DSpxHW
-    # #DSqxyHW_real           = np.radians(tth_roiHW_real) / 2 * 4 * np.pi / wavelength * np.cos(np.radians(tth/2))
+    # #DSqxyHW_real           = np.radians(tth_roiHW_real) / 2 * 4 * pi / wavelength * np.cos(np.radians(tth/2))
     
     # qxy0_select_idx        = meta["PseudoR"]["qxy0_select_idx"]
     # RqxyHW                 = meta["PseudoR"]["RqxyHW"]
@@ -167,7 +167,6 @@ def load_metadata(yaml_path: str):
     # # Physical constants
     # Qc                     = meta["sample_params"]["Qc"]
     # rho_b                  = Qc**2/16/math.pi
-    # kb                     = meta["sample_params"]["kb"]
     # tension                = meta["sample_params"]["tension"]
     # temperature            = meta["sample_params"]["temperature"]
     # kappa                  = meta["sample_params"]["kappa"]
@@ -213,7 +212,6 @@ def load_metadata(yaml_path: str):
     #     "scan": scan,
     #     "bkgsample": bkgsample,
     #     "bkgscan": bkgscan,
-    #     "kb": kb,
     #     "tension": tension,
     #     "kappa": kappa,
     #     "temperature": temperature,
@@ -681,9 +679,10 @@ def GIXOS_background_corr(sampledata, chamberbkg, bulkbkg_mode = None, bulkbkg_o
     bulkbkg_mode : string, optional
         can be None, direct, constant, fit_q. The default is None.
         None: no wide angle bkg subtraction
-        direct: using the direct wide angle line for substraction
-        constant: using a constant value for substraction
-        fit: fitting the wide angle over Q to be used as a wide angle bkg, requires alpha and wavelength in metadata of the sample
+        0: direct, using the direct wide angle line for substraction
+        1: constant, using a constant value for substraction
+        2: constant high beta: using an average over high beta data for subtraction
+        3: fit wide angle, fitting the wide angle over Q to be used as a wide angle bkg, requires alpha and wavelength in metadata of the sample
             requires "Q" field in sampledata and chamberbkg
     bulkbkg_offset_lb: float, optional
         lower boundary for fitting the offset of the bulkbkg, as a factor to the average of the first 10 values of the bulkbkg GIXOS cut
@@ -927,13 +926,13 @@ def GIXOS_qxy_dependence(
                 alpha,
                 beta_space[row_index],
                 phi_value,
-                energy,
-                HWtth,
-                HWtt * (row_window * 2 + 1),
-                tension,
-                temperature,
-                kappa_value,
-                amin,
+                energy = energy,
+                DSphi_HWHM = HWtth,
+                DSbeta_HWHM = HWtt * (row_window * 2 + 1),
+                tension = tension,
+                temp = temperature,
+                kappa = kappa_value,
+                amin = amin,
                 use_approx=True
                 )
             
@@ -1035,8 +1034,9 @@ def GIXOS_qxy_dependence(
                 results,
                 title = rf"$Q_{{xy}}$ dependence predict, $\kappa = {kappa_use:.0f}\,k_{{B}}T$"
             )
-
-    return results
+    GIXOSdict['qxy_dependence_ana'] = results
+    GIXOSdict["metadata"]["sample_params"]["kappa"] =  results['fit_kappa']
+    return GIXOSdict, results
 
 def GIXOS_qxy_dependence_plot(results, *, show_refs=True, show_err = True, title=None):
     """
@@ -1079,7 +1079,9 @@ def GIXOS2R(GIXOS, transmission_corr = False, footprint_effect = False, use_appr
     input for calc_film_DS_RRF_integ: use DSphi_HW instead of DSqxy_HW, use tth instead of qxy0, use energy in eV instead of keV
     
     """
+    # surface scattering optics
     GIXOS["fresnel"] = calc_fresnel(GIXOS["Qz"][:,GIXOS["metadata"]["PseudoR"]["qxy0_select_idx"]], GIXOS["metadata"]["sample_params"]["Qc"]) # check if fresnel == calc_fresnel      SAME
+    GIXOS["talpha_sqr"] = t_sqr(GIXOS["metadata"]["instrument"]["alpha"], GIXOS["metadata"]["instrument"]["energy"], qc = GIXOS["metadata"]["sample_params"]["Qc"])
     #GIXOS["Qz_array"] = np.asarray(GIXOS ["Qz"]).reshape(-1, 1) # done to convert GIXOS ["Qz"] from a row vetor to a column vector for calc_tbeta_sqr
     # Qz should always be a column vector!
     if footprint_effect and ("footprint" in GIXOS["metadata"]["instrument"]) and ("Ddet" in GIXOS["metadata"]["instrument"]) and ("alpha" in GIXOS["metadata"]["instrument"]) and ("energy" in GIXOS["metadata"]["instrument"]):
@@ -1104,26 +1106,42 @@ def GIXOS2R(GIXOS, transmission_corr = False, footprint_effect = False, use_appr
         DSbetaHW = GIXOS["HWtt"][0]
         DSphiHW = GIXOS["HWtth"][0,0]
     
-    GIXOS["DS_RRF_integ"], GIXOS["DS_term_integ"], GIXOS["RRF_term_integ"] = calc_eCWM_red_r(GIXOS["tt"], GIXOS["tth"][0,GIXOS["metadata"]["PseudoR"]["qxy0_select_idx"]], GIXOS["metadata"]["instrument"]["energy"], GIXOS["metadata"]["instrument"]["alpha"], GIXOS["metadata"]["PseudoR"]["RqxyHW"], DSphiHW, DSbetaHW, GIXOS["metadata"]["sample_params"]["tension"], GIXOS["metadata"]["sample_params"]["temperature"], GIXOS["metadata"]["sample_params"]["kappa"], GIXOS["metadata"]["sample_params"]["amin"], use_approx=use_approx)
-    # DS = Diffuse Scatter; RRF = Specular Reflectivity Normalized by Fresnel Reflectivity
-    # Approx form is derived from Taylor expansion, which is dependent on being close to 0 angle --> higher deviations at high angles
+    GIXOS["r_reduced"], GIXOS["Psi_DS"], GIXOS["Psi_R"] = calc_eCWM_red_r(
+                                                                            GIXOS["tt"], 
+                                                                            GIXOS["tth"][0,GIXOS["metadata"]["PseudoR"]["qxy0_select_idx"]], 
+                                                                            alpha = GIXOS["metadata"]["instrument"]["alpha"], 
+                                                                            energy = GIXOS["metadata"]["instrument"]["energy"], 
+                                                                            DSphi_HWHM = DSphiHW, 
+                                                                            DSbeta_HWHM = DSbetaHW, 
+                                                                            R_resolution_mode = GIXOS["metadata"]["PseudoR"]["resolution_mode"], 
+                                                                            R_resolution = GIXOS["metadata"]["PseudoR"]["resolution_HW"], 
+                                                                            R_energy = GIXOS["metadata"]["PseudoR"]["energy"], 
+                                                                            R_sdd = GIXOS["metadata"]["PseudoR"]["Ddet"], 
+                                                                            R_bkg_mode = GIXOS["metadata"]["PseudoR"]['bkg_mode'], 
+                                                                            R_bkg_off = GIXOS["metadata"]["PseudoR"]['bkg_off'], 
+                                                                            tension = GIXOS["metadata"]["sample_params"]["tension"], 
+                                                                            temp = GIXOS["metadata"]["sample_params"]["temperature"], 
+                                                                            kappa = GIXOS["metadata"]["sample_params"]["kappa"], 
+                                                                            amin = GIXOS["metadata"]["sample_params"]["amin"], 
+                                                                            use_approx=use_approx
+                                                                            )    
     
     # prefactor for this qxy0
-    GIXOS['prefactor_DS'] = GIXOS["metadata"]["sample_params"]["Qc"]**4 * 4 * GIXOS["tbeta_sqr"][:, 3] / (2*GIXOS["Qz"][:,GIXOS["metadata"]["PseudoR"]["qxy0_select_idx"]])**4 
+    GIXOS['prefactor_DS'] = GIXOS["metadata"]["sample_params"]["Qc"]**4 * GIXOS["talpha_sqr"] * GIXOS["tbeta_sqr"][:, 3] / (2*GIXOS["Qz"][:,GIXOS["metadata"]["PseudoR"]["qxy0_select_idx"]])**4 
     
     # computes reflectivity
     GIXOS["refl"] = np.column_stack([
         GIXOS["Qz"][:,GIXOS["metadata"]["PseudoR"]["qxy0_select_idx"]],
-        GIXOS["Intensity"][:,GIXOS["metadata"]["PseudoR"]["qxy0_select_idx"]] / GIXOS["DS_RRF_integ"] * GIXOS["fresnel"][:, 1] / GIXOS["prefactor_DS"],
-        GIXOS["error"][:,GIXOS["metadata"]["PseudoR"]["qxy0_select_idx"]] / GIXOS["DS_RRF_integ"] * GIXOS["fresnel"][:, 1] / GIXOS["prefactor_DS"],
+        GIXOS["Intensity"][:,GIXOS["metadata"]["PseudoR"]["qxy0_select_idx"]] / GIXOS["r_reduced"] * GIXOS["fresnel"][:, 1] / GIXOS["prefactor_DS"] / GIXOS["metadata"]["I0"],
+        GIXOS["error"][:,GIXOS["metadata"]["PseudoR"]["qxy0_select_idx"]] / GIXOS["r_reduced"] * GIXOS["fresnel"][:, 1] / GIXOS["prefactor_DS"] / GIXOS["metadata"]["I0"],
         GIXOS["dQz"][:, 4]
     ])
 
     # computes structure factor 
     GIXOS["SF"] = np.column_stack([
         GIXOS["Qz"][:,GIXOS["metadata"]["PseudoR"]["qxy0_select_idx"]],
-        GIXOS["Intensity"][:,GIXOS["metadata"]["PseudoR"]["qxy0_select_idx"]] / GIXOS["DS_term_integ"] / GIXOS["prefactor_DS"],
-        GIXOS["error"][:,GIXOS["metadata"]["PseudoR"]["qxy0_select_idx"]] / GIXOS["DS_term_integ"] / GIXOS["prefactor_DS"],
+        GIXOS["Intensity"][:,GIXOS["metadata"]["PseudoR"]["qxy0_select_idx"]] / GIXOS["Psi_DS"] / GIXOS["prefactor_DS"] / GIXOS["metadata"]["I0"],
+        GIXOS["error"][:,GIXOS["metadata"]["PseudoR"]["qxy0_select_idx"]] / GIXOS["Psi_DS"] / GIXOS["prefactor_DS"] / GIXOS["metadata"]["I0"],
         GIXOS["dQz"][:, 4]
     ])
     return GIXOS # outputs GIXOS with reflectivity and structure factor added as new columns
@@ -1233,93 +1251,3 @@ def GIXOS_file_output(GIXOS, xrr_config, metadata, tt_step):
 
     with open(sf_filename, 'a') as f:
         np.savetxt(f, GIXOS["SF"], delimiter='\t', fmt='%.6e')
-
-
-
-# from pseudo_xrr.plots import GIXOS_data_plot, R_data_plot, R_pseudo_data_plot
-# def rectangular_slit(metadata_file = './testing_data/gixos_metadata.yaml'):     # can make this a main function to run the whole code and have a parameter be the text file
-#     importGIXOSdata, importbkg = load_data(metadata_file)
-#     metadata = load_metadata(metadata_file)
-#     importGIXOSdata, importbkg = binning_GIXOS_data(importGIXOSdata, importbkg)
-#     importGIXOSdata, importbkg, tt_step = remove_negative_2theta(importGIXOSdata, importbkg)
-#     metadata = real_space_2theta(metadata)
-#     GIXOS, DSbetaHW = GIXOS_data_plot_prep(importGIXOSdata, importbkg, metadata, tt_step)
-#     GIXOS_data_plot(GIXOS, metadata)
-#     GIXOS = GIXOS_RF_and_SF(GIXOS, metadata, DSbetaHW)
-#     xrr_config = rect_slit_function(GIXOS, metadata)
-#     GIXOS = conversion_to_reflectivity(GIXOS, xrr_config)
-#     print("xrr_config keys:", xrr_config.keys())
-
-#     GIXOS_file_output(GIXOS, xrr_config, metadata, tt_step)
-#     R_data_plot(GIXOS, metadata, xrr_config)
-#     R_pseudo_data_plot(GIXOS, metadata, xrr_config)
-
-
-
-
-
-# import copy
-
-# def create_dependency_models(GIXOS, metadata, DSbetaHW):
-#     model = {
-#         "tt": np.ones(len(metadata['qz_selected'])),
-#         "Qz": np.ones(len(metadata['qz_selected'])),
-#         "Qxy": np.zeros((len(metadata['qz_selected']), GIXOS["Qxy"].shape[1]))
-#     }
-
-#     for idx in range(len(metadata['qz_selected'])):
-#         rowidx_arr = np.where(GIXOS["Qz"] <= metadata['qz_selected'][idx])[0]
-#         rowidx = rowidx_arr[-1]
-#         model["tt"][idx] = GIXOS["tt"][rowidx]
-#         model["Qz"][idx] = GIXOS["Qz"][rowidx]
-#         model["Qxy"][idx, :] = GIXOS["Qxy"][rowidx, :]
-
-#     assume_model = {
-#         "1": copy.deepcopy(model),
-#         "2": copy.deepcopy(model)
-#     }
-
-#     CWM_model = copy.deepcopy(model)
-
-#     model["DS_RRF"] = np.zeros((len(model["tt"]), GIXOS["GIXOS"].shape[1]))
-#     model["DS_term"] = np.zeros((len(model["tt"]), GIXOS["GIXOS"].shape[1]))
-#     model["RRF_term"] = np.zeros((len(model["tt"]), GIXOS["GIXOS"].shape[1]))
-#     assume_model["1"]["DS_RRF"] = np.zeros((len(model["tt"]), GIXOS["GIXOS"].shape[1]))
-#     assume_model["1"]["DS_term"] = np.zeros((len(model["tt"]), GIXOS["GIXOS"].shape[1]))
-#     assume_model["1"]["RRF_term"] = np.zeros((len(model["tt"]), GIXOS["GIXOS"].shape[1]))
-#     assume_model["2"]["DS_RRF"] = np.zeros((len(model["tt"]), GIXOS["GIXOS"].shape[1]))
-#     assume_model["2"]["DS_term"] = np.zeros((len(model["tt"]), GIXOS["GIXOS"].shape[1]))
-#     assume_model["2"]["RRF_term"] = np.zeros((len(model["tt"]), GIXOS["GIXOS"].shape[1]))
-#     CWM_model["DS_RRF"] = np.zeros((len(model["tt"]), GIXOS["GIXOS"].shape[1]))
-#     CWM_model["DS_term"] = np.zeros((len(model["tt"]), GIXOS["GIXOS"].shape[1]))
-#     CWM_model["RRF_term"] = np.zeros((len(model["tt"]), GIXOS["GIXOS"].shape[1]))
-
-#     metadata["energy"] = np.asarray(metadata["energy"])
-#     metadata["alpha"] = np.asarray(metadata["alpha"])
-#     metadata["RqxyHW"] = np.asarray(metadata["RqxyHW"])
-#     metadata["DSqxyHW_real"] = np.asarray(metadata["DSqxyHW_real"])
-#     # GIXOS["DSbetaHW"] = np.asarray(GIXOS["DSbetaHW"])        only add this and make changes if we say that DSbetaHW is part of GIXOS above
-#     DSbetaHW = np.asarray(DSbetaHW)
-#     metadata["tension"] = np.asarray(metadata["tension"])
-#     metadata["temperature"] = np.asarray(metadata["temperature"])
-#     metadata["kappa"] = np.asarray(metadata["kappa"])
-#     metadata["amin"] = np.asarray(metadata["amin"])
-
-
-#     def process(idx):
-#         show_last_plot = (idx == GIXOS["GIXOS"].shape[1] - 1)  # Only show plot on last iteration
-#         model_DS_RRF, model_DS_term, model_RRF_term = calc_film_DS_RRF_integ(model["tt"], metadata["tth"][idx], metadata['energy'], metadata['alpha'], metadata['RqxyHW'], metadata['DSqxyHW_real'][idx], DSbetaHW, metadata['tension'], metadata['temperature'], metadata['kappa'], metadata['amin'], show_plot = False)
-#         assume_model_1_DS_RRF, assume_model_1_DS_term, assume_model_1_RRF_term = calc_film_DS_RRF_integ(model["tt"], metadata["tth"][idx], metadata['energy'], metadata['alpha'], metadata['RqxyHW'], metadata['DSqxyHW_real'][idx], DSbetaHW, metadata['tension'], metadata['temperature'], metadata['assume_kappa'][0], metadata['amin'], show_plot = False)
-#         assume_model_2_DS_RRF, assume_model_2_DS_term, assume_model_2_RRF_term = calc_film_DS_RRF_integ(model["tt"], metadata["tth"][idx], metadata['energy'], metadata['alpha'], metadata['RqxyHW'], metadata['DSqxyHW_real'][idx], DSbetaHW, metadata['tension'], metadata['temperature'], metadata['assume_kappa'][1], metadata['amin'], show_plot = False)
-#         CWM_model_DS_RRF, CWM_model_DS_term, CWM_model_RRF_term = calc_film_DS_RRF_integ(model["tt"], metadata["tth"][idx], metadata['energy'], metadata['alpha'], metadata['RqxyHW'], metadata['DSqxyHW_real'][idx], DSbetaHW, metadata['tension'], metadata['temperature'], 0, metadata['amin'], show_plot = show_last_plot)
-#         return idx, model_DS_RRF, model_DS_term, model_RRF_term, assume_model_1_DS_RRF, assume_model_1_DS_term, assume_model_1_RRF_term, assume_model_2_DS_RRF, assume_model_2_DS_term, assume_model_2_RRF_term, CWM_model_DS_RRF, CWM_model_DS_term, CWM_model_RRF_term
-#     results = Parallel(n_jobs=-1, backend="loky")(
-#         delayed(process)(i) for i in range(GIXOS["GIXOS"].shape[1])
-#     )
-
-#     for idx, model_DS_RRF, model_DS_term, model_RRF_term, assume_model_1_DS_RRF, assume_model_1_DS_term, assume_model_1_RRF_term, assume_model_2_DS_RRF, assume_model_2_DS_term, assume_model_2_RRF_term, CWM_model_DS_RRF, CWM_model_DS_term, CWM_model_RRF_term in results:
-#         model["DS_RRF"][:, idx], model["DS_term"][:, idx], model["RRF_term"][:, idx] = model_DS_RRF, model_DS_term, model_RRF_term
-#         assume_model["1"]["DS_RRF"][:, idx], assume_model["1"]["DS_term"][:, idx], assume_model["1"]["RRF_term"][:, idx] = assume_model_1_DS_RRF, assume_model_1_DS_term, assume_model_1_RRF_term
-#         assume_model["2"]["DS_RRF"][:, idx], assume_model["2"]["DS_term"][:, idx], assume_model["2"]["RRF_term"][:, idx] = assume_model_2_DS_RRF, assume_model_2_DS_term, assume_model_2_RRF_term
-#         CWM_model["DS_RRF"][:, idx], CWM_model["DS_term"][:, idx], CWM_model["RRF_term"][:, idx] = CWM_model_DS_RRF, CWM_model_DS_term, CWM_model_RRF_term
-#     return model, assume_model, CWM_model

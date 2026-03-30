@@ -10,15 +10,8 @@ import numpy as np
 from numpy import trapz
 import pandas as pd
 import matplotlib.pyplot as plt
-
-#from p08_GIXD import *
-#from p08_general import *
-
 from pseudo_xrr.eCWM import *
 from pseudo_xrr.data_io import *
-#from pseudo_xrr.slit import Rectungular_slit
-#from pseudo_xrr.Dependency import *
-
 from pyinstrument import Profiler
 
 #%%
@@ -70,7 +63,7 @@ GIXOSbkg= remove_negative_2theta(GIXOSbkg)
 GIXOSdata_q = GIXOS_th2q(GIXOSdata)
 GIXOSbkg_q = GIXOS_th2q(GIXOSbkg)
 #% background subtraction
-GIXOS_clean = GIXOS_background_corr(GIXOSdata_q, GIXOSbkg_q, bulkbkg_mode = "fit", bulkbkg_offset_lb=0.9)
+GIXOS_ana = GIXOS_background_corr(GIXOSdata_q, GIXOSbkg_q, bulkbkg_mode = "fit", bulkbkg_offset_lb=0.9)
 
 #%%
 # Create the plot
@@ -78,8 +71,8 @@ plt.figure()
 plt.plot(GIXOSdata["tt"], GIXOSdata["Intensity"][:,2])
 plt.plot(GIXOSbkg["tt"], GIXOSbkg["Intensity"][:,2])
 plt.plot(GIXOSdata["tt"], GIXOSdata["Intensity"][:,2]-GIXOSbkg["Intensity"][:,2])
-plt.errorbar(GIXOS_clean["tt"], GIXOS_clean["Intensity"][:,2], yerr = GIXOS_clean["error"][:,2], fmt ='o', markersize = 1, capsize = 3)
-plt.plot(GIXOS_clean["tt"], GIXOS_clean["bulkbkg"]["Intensity_at_GIXOS"][:,2])
+plt.errorbar(GIXOS_ana["tt"], GIXOS_ana["Intensity"][:,2], yerr = GIXOS_ana["error"][:,2], fmt ='o', markersize = 1, capsize = 3)
+plt.plot(GIXOS_ana["tt"], GIXOS_ana["bulkbkg"]["Intensity_at_GIXOS"][:,2])
 # Set log10 scale on the y-axis
 #plt.yscale('log')
 # Add labels and title
@@ -90,20 +83,23 @@ plt.legend()
 plt.grid(True, which="both", ls="--", lw=0.5)
 plt.show()
 
+#%% from here on the operation will directly add results into the original dictionary variable (shared memory)
 #%% qxy dependence
-qxy_dependence_predict = GIXOS_qxy_dependence(GIXOS_clean, GIXOS_clean['metadata']['dependency']['qz_selected'], fit_kappa = False)
-qxy_dependence_fit = GIXOS_qxy_dependence(GIXOS_clean, GIXOS_clean['metadata']['dependency']['qz_selected'], fit_kappa = True)
+# GIXOS_kappa_predict, qxy_dependence_predict = GIXOS_qxy_dependence(GIXOS_clean, GIXOS_clean['metadata']['dependency']['qz_selected'], fit_kappa = False)
+_, qxy_dependence_fit = GIXOS_qxy_dependence(GIXOS_ana, GIXOS_ana['metadata']['dependency']['qz_selected'], fit_kappa = True)
 
 #%% processing pseudo
-GIXOS_ana = GIXOS2R(GIXOS_clean, transmission_corr = True, use_approx=False)
+_ = GIXOS2R(GIXOS_ana, transmission_corr = True, footprint_effect=True, use_approx=True)
 
 #%%
+RFscaling_ref = GIXOS_ana["metadata"]['I0'] * GIXOS_ana["metadata"]['sample_params']['rho_b'] ** 2 / math.sin(math.radians(GIXOS_ana["metadata"]['instrument']['alpha'])) *GIXOS_ana['talpha_sqr']
+
 # Create the plot
 plt.figure()
-plt.plot(SF_ref[:,0],SF_ref[:,1]/GIXOS_ana["metadata"]["RFscaling"]/ (math.pi / 180) ** 2, label = 'matlab structure factor')
-plt.errorbar(GIXOS_ana["refl"][:,0], GIXOS_ana["refl"][:,1]/GIXOS_ana["fresnel"][:,1]/GIXOS_ana["metadata"]["I0"], GIXOS_ana["refl"][:,2]/GIXOS_ana["fresnel"][:,1]/GIXOS_ana["metadata"]["I0"], fmt ='o', markersize = 1, capsize = 3, label = 'pseudoR')
-plt.plot(R_ref[:,0],R_ref[:,1]/(0.0218/2/R_ref[:,0])**4/GIXOS_ana["metadata"]["RFscaling"]/ (math.pi / 180) ** 2, label = 'matlab pseudoR')
-plt.errorbar(GIXOS_ana["SF"][:,0], GIXOS_ana["SF"][:,1]/GIXOS_ana["metadata"]["I0"], GIXOS_ana["SF"][:,2]/GIXOS_ana["metadata"]["I0"], fmt ='o', markersize = 1, capsize = 3, label = 'structure factor')
+plt.plot(SF_ref[:,0],SF_ref[:,1]/RFscaling_ref/ (pi / 180) ** 2, label = 'matlab structure factor')
+plt.errorbar(GIXOS_ana["refl"][:,0], GIXOS_ana["refl"][:,1]/GIXOS_ana["fresnel"][:,1], GIXOS_ana["refl"][:,2]/GIXOS_ana["fresnel"][:,1], fmt ='o', markersize = 1, capsize = 3, label = 'pseudoR')
+plt.plot(R_ref[:,0],R_ref[:,1]/(0.0218/2/R_ref[:,0])**4/RFscaling_ref/ (pi / 180) ** 2, label = 'matlab pseudoR')
+plt.errorbar(GIXOS_ana["SF"][:,0], GIXOS_ana["SF"][:,1], GIXOS_ana["SF"][:,2], fmt ='o', markersize = 1, capsize = 3, label = 'structure factor')
 # Set log10 scale on the y-axis
 plt.yscale('log')
 # Add labels and title

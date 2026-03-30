@@ -31,7 +31,14 @@ def eCWM_correlation_integrand_replacement(r, qxy, eta, Lk, amin): # Changes mad
     return term1 * term2 * term3
 
 
-def eCWM_diffPsi_red(beta_rad, phi_rad, kbT_gamma, wave_number, alpha, Lk, amin, use_approx = False):
+def eCWM_diffPsi_red(beta_rad, 
+                     phi_rad, 
+                     kbT_gamma, 
+                     wave_number, 
+                     alpha, 
+                     Lk, 
+                     amin, 
+                     use_approx = False):
     """
     Calculate the reduced differential roughness factor psi_red(Qxy, Qz).
 
@@ -180,8 +187,15 @@ def eCWM_diffPsi_red(beta_rad, phi_rad, kbT_gamma, wave_number, alpha, Lk, amin,
 # Psi_R(Qz)         : specular roughness factor after angular integration
 # r_red             : reduced ratio Psi_DS / Psi_R
 
-def calc_eCWM_roughness_factor_DS(alpha, beta_space, phi, energy, DSphi_HWHM, DSbeta_HWHM,
-                           tension, temp, kappa, amin, use_approx=False):
+def calc_eCWM_roughness_factor_DS(alpha, beta_space, phi, 
+                                  energy = None, 
+                                  DSphi_HWHM = None, 
+                                  DSbeta_HWHM = None,
+                                  tension = 0.073, 
+                                  temp = 295, 
+                                  kappa = 0, 
+                                  amin = 3.1, 
+                                  use_approx=False):
     """
     Calculate the diffuse roughness factor Psi_DS by angular integration
     of the eCWM differential roughness factor over a finite detector window.
@@ -225,7 +239,9 @@ def calc_eCWM_roughness_factor_DS(alpha, beta_space, phi, energy, DSphi_HWHM, DS
     phi : float
         In-plane angular offset from the specular condition in degrees.
         Must be a single scalar value.
-
+    
+    -- keyward argument, must be given --
+    
     energy : float
         X-ray energy in eV.
 
@@ -286,6 +302,38 @@ def calc_eCWM_roughness_factor_DS(alpha, beta_space, phi, energy, DSphi_HWHM, DS
     - Eq. (18): finite detector angular integration form
     """
     
+    # ------------------------------------------------------------
+    # Validate required inputs for diffuse scattering calculation
+    # ------------------------------------------------------------
+    required_params = {
+        "energy": energy,
+        "DSphi_HWHM": DSphi_HWHM,
+        "DSbeta_HWHM": DSbeta_HWHM,
+    }
+    
+    for name, value in required_params.items():
+        if value is None:
+            raise ValueError(f"{name} must be provided for diffuse scattering calculation.")
+    
+        # check scalar (not array/list)
+        if np.ndim(value) != 0:
+            raise ValueError(f"{name} must be a scalar (float), not an array.")
+    
+        # try converting to float
+        try:
+            required_params[name] = float(value)
+        except (TypeError, ValueError):
+            raise ValueError(f"{name} must be a float (or convertible to float).")
+    
+    # overwrite with validated values
+    energy = required_params["energy"]
+    DSphi_HWHM = required_params["DSphi_HWHM"]
+    DSbeta_HWHM = required_params["DSbeta_HWHM"]
+    
+    # ------------------------------------------------------------
+    # start calculation
+    # ------------------------------------------------------------
+    
     wavelength = 12400.0 / energy
     wave_number = 2 * pi / wavelength
     qz = wave_number * (np.sin(np.radians(alpha)) + np.sin(np.radians(beta_space)))
@@ -324,9 +372,9 @@ def calc_eCWM_roughness_factor_SP(
     bkg_mode=None,
     bkg_off= 1,
     tension=0.073,
-    temp=293,
+    temp=295,
     kappa=0,
-    amin=5,
+    amin=3.1,
     use_approx = False
     ):
 
@@ -477,6 +525,7 @@ def calc_eCWM_roughness_factor_SP(
     - Eq. (18): slit-integrated specular roughness factor
     - Eq. (19): circular-resolution specular roughness factor
     """
+       
     # ------------------------------------------------------------
     # Input preparation and common eCWM parameters
     # ------------------------------------------------------------
@@ -592,7 +641,7 @@ def calc_eCWM_roughness_factor_SP(
         # convert detector slit size (mm) into angular / Q-space acceptance
         # using x-ray energy and sample-detector distance
         wavelength = 12400/energy
-        wave_number = 2 * np.pi / wavelength
+        wave_number = 2 * pi / wavelength
         beta = np.degrees(np.arcsin(qz_space / 2 / wave_number))
         beta = beta.reshape(-1, 1) # do this, otherwise beta_xrr has shape (46,) instead of (46, 1) which will mess up xrr_config_phi_array_for_qxy_slit_min and make it (46, 46) instead of (46, 1) like MATLAB code
         alpha = beta # xrr: alpha = beta
@@ -627,7 +676,7 @@ def calc_eCWM_roughness_factor_SP(
         qxy_slit = np.zeros((slit_coord.shape[0], 2, beta.shape[0]))
         qxy_slit_min = np.zeros((beta.shape[0], 1))
         # polar angle within the slit, for ease of Qxy coordinate calculation
-        ang = np.arange(0, 2 * np.pi, 0.01) 
+        ang = np.arange(0, 2 * pi, 0.01) 
         qxy_slit_min_coord = np.zeros((ang.shape[0], 2, qxy_slit_min.shape[0]))
         # ------------------------------------------------------------
         # Handle singularity at Qxy = 0 (specular condition)
@@ -860,8 +909,24 @@ def calc_eCWM_roughness_factor_SP(
 
     
 
-def calc_eCWM_red_r(beta_space, phi, energy, alpha, Rqxy_HWHM, DSphi_HWHM, DSbeta_HWHM,
-                           tension, temp, kappa, amin, use_approx=False, show_plot=True):
+def calc_eCWM_red_r(beta_space, 
+                    phi, 
+                    alpha=None,                    
+                    energy=None,  
+                    DSphi_HWHM=None, 
+                    DSbeta_HWHM=None,
+                    R_resolution_mode=0,
+                    R_resolution=0.0002,
+                    R_energy = None,
+                    R_sdd = 1000,
+                    R_bkg_mode=None,
+                    R_bkg_off= 1,
+                    tension=0.073, 
+                    temp=295, 
+                    kappa=0, 
+                    amin=3.1, 
+                    use_approx=False, 
+                    show_plot=True):
     """
     Calculate the reduced ratio r_red = Psi_DS / Psi_R of diffuse and specular roughness factors.
 
@@ -884,8 +949,10 @@ def calc_eCWM_red_r(beta_space, phi, energy, alpha, Rqxy_HWHM, DSphi_HWHM, DSbet
     The function internally computes:
     - Psi_DS(Qz, Qxy0): diffuse roughness factor using
       calc_eCWM_roughness_factor_DS()
-    - Psi_R(Qz): specular roughness factor using circular Qxy resolution
-      (calc_eCWM_roughness_factor_SP with resolution_mode = 0)
+    - Psi_R(Qz): specular roughness factor: 
+        circular or slit (w/o or with bkg subtraction)
+        default: using circular Qxy resolution
+        (calc_eCWM_roughness_factor_SP with resolution_mode = 0)
     
     Parameters
     ----------
@@ -895,16 +962,13 @@ def calc_eCWM_red_r(beta_space, phi, energy, alpha, Rqxy_HWHM, DSphi_HWHM, DSbet
     phi : float
         In-plane angular offset (in degrees) defining the diffuse scattering
         position (Qxy0). Must be a single scalar.
-
-    energy : float
-        X-ray energy in eV.
-
+    
+    -- keyword arguments --    
     alpha : float
         Incident angle in degrees. Must be a single scalar.
-
-    Rqxy_HWHM : float
-        Circular Qxy resolution half-width (HWHM) in 1/Å used for the
-        specular roughness factor Psi_R(Qz).
+            
+    energy : float
+        X-ray energy in eV.
 
     DSphi_HWHM : float
         Half-width (HWHM) of the detector acceptance in phi (degrees) for
@@ -925,6 +989,45 @@ def calc_eCWM_red_r(beta_space, phi, energy, alpha, Rqxy_HWHM, DSphi_HWHM, DSbet
 
     amin : float
         Molecular cutoff length in Å, used to define Qmax = pi / amin.
+    
+    R_resolution_mode : int, optional
+        Selects the reflectivity resolution description:
+        - 0 : circular Qxy resolution in reciprocal space
+        - 1 : rectangular slit resolution in reflectometry detector space
+        Default is 0.
+
+    R_resolution : float or array-like
+        reflectivity resolution parameter, interpreted according to R_resolution_mode.
+
+        If R_resolution_mode == 0:
+            Single float giving the circular Qxy half width
+            dQxy_R [1/Angstrom].
+
+        If R_resolution_mode == 1:
+            Two-element array-like [slit_v_HWHM, slit_h_HWHM] in mm,
+            giving the reflectometry detector slit half widths in the vertical 
+            and horizontal directions.
+    
+    R_energy : float, optional
+        reflectometry energy in eV. Required when R_resolution_mode == 1.
+        Not used when R_resolution_mode == 0.
+
+    R_sdd : float, optional
+        reflectometry sample-to-detector distance in mm. Required when
+        resolution_mode == 1. Default is 1000.
+    
+    R_bkg_mode : None or int, optional
+        reflectivity background subtraction mode, only relevant when
+        R_resolution_mode == 1.
+        - None : no background subtraction
+        - 0    : horizontal reflectometry slit offset
+        - 1    : vertical reflectometry slit offset
+        Default is None.
+
+    R_bkg_off : float, optional
+        reflectometry background slit offset in mm when R_bkg_mode is 0 or 1.
+        Ignored when bkg_mode is None or when R_resolution_mode == 0.
+        Default is 1.
 
     use_approx : bool, optional
         If True, use the approximate form of the eCWM differential roughness
@@ -981,15 +1084,116 @@ def calc_eCWM_red_r(beta_space, phi, energy, alpha, Rqxy_HWHM, DSphi_HWHM, DSbet
     full intensity ratio r of Eq. (28).
     
     """
+    # ------------------------------------------------------------
+    # Validate required inputs for diffuse scattering calculation
+    # ------------------------------------------------------------
+    required_params = {
+        "alpha": alpha,
+        "energy": energy,
+        "DSphi_HWHM": DSphi_HWHM,
+        "DSbeta_HWHM": DSbeta_HWHM,
+    }
+    
+    for name, value in required_params.items():
+        if value is None:
+            raise ValueError(f"{name} must be provided for diffuse scattering calculation.")
+    
+        # check scalar (not array/list)
+        if np.ndim(value) != 0:
+            raise ValueError(f"{name} must be a scalar (float), not an array.")
+    
+        # try converting to float
+        try:
+            required_params[name] = float(value)
+        except (TypeError, ValueError):
+            raise ValueError(f"{name} must be a float (or convertible to float).")
+    
+    # overwrite with validated values
+    alpha = required_params["alpha"]
+    energy = required_params["energy"]
+    DSphi_HWHM = required_params["DSphi_HWHM"]
+    DSbeta_HWHM = required_params["DSbeta_HWHM"]
+    
+    # ----------------------------
+    # validate resolution_mode
+    # ----------------------------
+    if R_resolution_mode not in (0, 1):
+        raise ValueError("resolution_mode must be 0 or 1")
+    # ------------------------------------------------------------
+    # Resolution model selection
+    # ------------------------------------------------------------
+    # ------------------------------------------------------------
+    # Mode 0: circular Qxy resolution (Eq. 19)
+    # ------------------------------------------------------------
+    if R_resolution_mode == 0:
+        if np.ndim(R_resolution) != 0:
+            raise ValueError(
+                "When R_resolution_mode == 0, circular resolution dQxy_R [1/A], resolution must be a single float."
+            )
+        R_resolution = float(R_resolution)
+
+    # ------------------------------------------------------------
+    # Mode 1: rectangular slit resolution (Eq. 18)
+    # ------------------------------------------------------------
+    elif R_resolution_mode == 1:
+        R_res = np.asarray(R_resolution, dtype=float)
+        if R_res.shape != (2,):
+            raise ValueError(
+                "When R_resolution_mode == 1, slit resolution [mm], resolution must be a 2-element array "
+                "[sl_v_HWHM, sl_h_HWHM]."
+            )
+        if R_energy is False or R_energy is None:
+            raise ValueError(
+                "When R_resolution_mode == 1, reflectivity energy [eV] must be given as a single float."
+            )
+        if R_sdd is False or R_sdd is None:
+            raise ValueError(
+                "When R_resolution_mode == 1, reflectivity sdd [mm] must be given as a single float."
+            )
+
+        R_energy = float(R_energy)
+        R_sdd = float(R_sdd)
+        R_resolution = R_res
+
+    # ----------------------------
+    # background settings (NEW API)
+    # ----------------------------
+    # R_bkg_mode:
+    #   None → no background
+    #   0    → horizontal offset (phi direction)
+    #   1    → vertical offset (beta direction)
+
+    if (R_bkg_mode is None) or (R_resolution_mode == 0):
+        # background not used
+        R_bkg_mode_use = None
+        R_bkg_off_use = None
+
+    else:
+        if R_bkg_mode not in (0, 1):
+            raise ValueError("R_bkg_mode must be None, 0, or 1")
+
+        # must be a single float now
+        if np.ndim(R_bkg_off) != 0:
+            raise ValueError(
+                "When R_bkg_mode is 0 or 1, R_bkg_off must be a single float."
+            )
+        R_bkg_mode_use = int(R_bkg_mode)
+        R_bkg_off_use = float(R_bkg_off)
+    
     wavelength = 12400.0 / energy
     wave_number = 2 * pi / wavelength
     qz_space = (np.sin(np.radians(alpha)) + np.sin(np.radians(beta_space))) * wave_number
     qxy0 = 2*wave_number*np.sin(np.radians(phi)/2)
     
-    eCWM_Psi_DS = calc_eCWM_roughness_factor_DS(alpha, beta_space, phi, energy, DSphi_HWHM, DSbeta_HWHM,
-                               tension, temp, kappa, amin, use_approx=use_approx)
-    eCWM_Psi_R = calc_eCWM_roughness_factor_SP(qz_space, resolution_mode=0, resolution=Rqxy_HWHM, 
-                                                tension=tension, temp=temp, kappa=kappa, amin=amin)
+    eCWM_Psi_DS = calc_eCWM_roughness_factor_DS(alpha, beta_space, phi, 
+                                                energy=energy, DSphi_HWHM=DSphi_HWHM, DSbeta_HWHM=DSbeta_HWHM,
+                                                tension=tension, temp=temp, kappa=kappa, amin=amin, 
+                                                use_approx=use_approx)
+    eCWM_Psi_R = calc_eCWM_roughness_factor_SP(qz_space, 
+                                               energy=R_energy, sdd=R_sdd,
+                                               resolution_mode=R_resolution_mode, resolution=R_resolution, 
+                                               bkg_mode=R_bkg_mode_use, bkg_off=R_bkg_off_use, 
+                                               tension=tension, temp=temp, kappa=kappa, amin=amin)
     # reduced r: ratio of roughness factors only
     # does not include Fresnel reflectivity, transmission coefficients,
     # or intrinsic structure-factor terms from the full intensity ratio
@@ -1107,11 +1311,11 @@ def GIXOS_dQz(Qz, energy_eV, alpha_deg, Ddet_mm, footprint_mm):
     planck = 12400  # eV·A
     wavelength = planck / energy_eV  # Å
 
-    # Qz = np.asarray(Qz).reshape(-1, 1)
+    Qz = np.asarray(Qz).reshape(-1, 1)
     # Qz should always be a column vector
     dQz = np.zeros((Qz.shape[0], 6)) # change np.zeros((Qz.shape[0], 5)) to np.zeros((Qz.shape[0], 6)) to match MATLAB output and produce 6 columns
     dQz[:, 0] = Qz[:, 0]
-
+    
     alpha_rad = np.radians(alpha_deg)
     beta_center = np.degrees(np.arcsin(Qz[:, 0] * wavelength / (2 * pi) - np.sin(alpha_rad)))
     beta_max = np.degrees(np.arctan(np.tan(np.radians(beta_center)) * Ddet_mm / (Ddet_mm - footprint_mm)))
