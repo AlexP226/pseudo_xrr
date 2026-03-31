@@ -5,13 +5,12 @@ Created on Tue Oct 28 16:39:16 2025
 @author: shenc
 """
 # NEED TO HAVE DATA FILES DOWNLOADED AND UPDATE PATHS
-import math
 import numpy as np
-from numpy import trapz
-import pandas as pd
 import matplotlib.pyplot as plt
+from scipy.constants import pi
 from pseudo_xrr.eCWM import *
 from pseudo_xrr.data_io import *
+from pseudo_xrr.GIXOS import *
 from pyinstrument import Profiler
 
 #%%
@@ -21,35 +20,8 @@ R_file = "U:/p08/2023/data/11016139/shared/analysis_version1/pseudoXRR/pseudoXRR
 SF_ref = np.loadtxt(SF_file, skiprows=29)
 R_ref = np.loadtxt(R_file, skiprows=28)
 
-#%% routine 1: load metadata and data separately, and extract the GIXOS
-# metadata = load_metadata('./testing_data/p08test_gixos_metadata.yaml')
-# datafileprefix = metadata['measurements']['sample']+'_{:05d}'.format(metadata['measurements']['scan'])+'_angle'
-# GIXSdata = load_data(datafileprefix, metadata['paths']['gixs_path'], datatype=metadata['datatype'])
-# bkgfileprefix = metadata['measurements']['bkgsample']+'_{:05d}'.format(metadata['measurements']['bkgscan'])+'_angle'
-# GIXSbkg = load_data(bkgfileprefix, metadata['paths']['gixs_path'],  datatype=metadata['datatype'])
-# #%% geometric correction since my GIXS rebinning did not have this correction
-# GIXSdata = geometrical_corr(GIXSdata, Ddet = metadata["instrument"]["Ddet"], det_px = metadata["instrument"]["pixel"], HWtth =  GIXSdata["HWtth"][0,0], HWtt =  GIXSdata["HWtt"][0])
-# GIXSbkg = geometrical_corr(GIXSbkg, Ddet = metadata["instrument"]["Ddet"], det_px = metadata["instrument"]["pixel"], HWtth = GIXSbkg["HWtth"][0,0], HWtt =  GIXSbkg["HWtt"][0])
-# GIXOSdata = extract_1dGIXOS(GIXSdata, metadata['tth'], HWpx_h = metadata['DSpxHW'])
-# GIXOSbkg = extract_1dGIXOS(GIXSbkg, metadata['tth'], HWpx_h = metadata['DSpxHW'])
-# #% still need to populate metadata with instrument, sample parameters, and so on for th2q, bkg correction, eCWM analysis
-# GIXOSdata['metadata'] = metadata
-# GIXOSbkg['metadata'] = metadata
-#%% if metadata is entered manually for further processing
-# GIXOSdata['metadata'] = {
-#                             "instrument": {"energy": 15000, "alpha": 0.07},
-#                             "sample_params": {"Qc": 0.0218, "temperature": 295, "tension": 0.038, "kappa": 10, "amin": 5},
-#                             "qxy0": metadata["qxy0"],
-#                             "qxy_bkg": 0.3,
-#                             "PseudoR": {"qxy0_select_idx": 1, 'RqxyHW': 0.0002},
-#                             }
-# GIXOSbkg['metadata'] = {
-#                             "instrument": {"energy": 15000, "alpha": 0.07},
-#                             "qxy0": metadata["qxy0"],
-#                             "qxy_bkg": 0.3,
-#                             }
-
-#%% routine 2: directly load data from meta and GIXOS will be automatically extracted:
+#%% directly load data from meta and GIXOS will be automatically extracted:
+# alternatively, load_data, geometrical correction, extract_1dGIXOS, and provide metadata into this field
 GIXOSdata, GIXOSbkg = load_gixos_from_meta('./testing_data/p08test_gixos_metadata.yaml') 
 
 #%% from here identical 
@@ -85,30 +57,29 @@ plt.show()
 
 #%% from here on the operation will directly add results into the original dictionary variable (shared memory)
 #%% qxy dependence
-# GIXOS_kappa_predict, qxy_dependence_predict = GIXOS_qxy_dependence(GIXOS_clean, GIXOS_clean['metadata']['dependency']['qz_selected'], fit_kappa = False)
 _, qxy_dependence_fit = GIXOS_qxy_dependence(GIXOS_ana, GIXOS_ana['metadata']['dependency']['qz_selected'], fit_kappa = True)
 
 #%% processing pseudo
-_ = GIXOS2R(GIXOS_ana, transmission_corr = True, footprint_effect=True, use_approx=False)
+_ = GIXOS2R(GIXOS_ana, transmission_corr = True, footprint_effect=True, use_approx=True)
 
-#%%
-RFscaling_ref = GIXOS_ana["metadata"]['I0'] * GIXOS_ana["metadata"]['sample_params']['rho_b'] ** 2 / math.sin(math.radians(GIXOS_ana["metadata"]['instrument']['alpha'])) *GIXOS_ana['talpha_sqr']
+# #%%
+# RFscaling_ref = GIXOS_ana["metadata"]['I0'] * GIXOS_ana["metadata"]['sample_params']['rho_b'] ** 2 / np.sin(np.radians(GIXOS_ana["metadata"]['instrument']['alpha'])) *GIXOS_ana['talpha_sqr']
 
-# Create the plot
-plt.figure()
-plt.plot(SF_ref[:,0],SF_ref[:,1]/RFscaling_ref/ (pi / 180) ** 2, label = 'matlab structure factor')
-plt.errorbar(GIXOS_ana["refl"][:,0], GIXOS_ana["refl"][:,1]/GIXOS_ana["fresnel"][:,1], GIXOS_ana["refl"][:,2]/GIXOS_ana["fresnel"][:,1], fmt ='o', markersize = 1, capsize = 3, label = 'pseudoR')
-plt.plot(R_ref[:,0],R_ref[:,1]/(0.0218/2/R_ref[:,0])**4/RFscaling_ref/ (pi / 180) ** 2, label = 'matlab pseudoR')
-plt.errorbar(GIXOS_ana["SF"][:,0], GIXOS_ana["SF"][:,1], GIXOS_ana["SF"][:,2], fmt ='o', markersize = 1, capsize = 3, label = 'structure factor')
-# Set log10 scale on the y-axis
-plt.yscale('log')
-# Add labels and title
-plt.xlabel("X values")
-plt.ylabel("Y values rad (log scale)")
-plt.ylim([1e-7, 10])
-plt.legend()
-plt.grid(True, which="both", ls="--", lw=0.5)
-plt.show()
+# # Create the plot
+# plt.figure()
+# plt.plot(SF_ref[:,0],SF_ref[:,1]/RFscaling_ref/ (pi / 180) ** 2, label = 'matlab structure factor')
+# plt.errorbar(GIXOS_ana["refl"][:,0], GIXOS_ana["refl"][:,1]/GIXOS_ana["fresnel"][:,1], GIXOS_ana["refl"][:,2]/GIXOS_ana["fresnel"][:,1], fmt ='o', markersize = 1, capsize = 3, label = 'pseudoR')
+# plt.plot(R_ref[:,0],R_ref[:,1]/(0.0218/2/R_ref[:,0])**4/RFscaling_ref/ (pi / 180) ** 2, label = 'matlab pseudoR')
+# plt.errorbar(GIXOS_ana["SF"][:,0], GIXOS_ana["SF"][:,1], GIXOS_ana["SF"][:,2], fmt ='o', markersize = 1, capsize = 3, label = 'structure factor')
+# # Set log10 scale on the y-axis
+# plt.yscale('log')
+# # Add labels and title
+# plt.xlabel("X values")
+# plt.ylabel("Y values rad (log scale)")
+# plt.ylim([1e-7, 10])
+# plt.legend()
+# plt.grid(True, which="both", ls="--", lw=0.5)
+# plt.show()
 
 
 #%% work for qxy dependence

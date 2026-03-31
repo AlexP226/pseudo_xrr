@@ -5,13 +5,12 @@ Created on Tue Oct 28 16:39:16 2025
 @author: shenc
 """
 # NEED TO HAVE DATA FILES DOWNLOADED AND UPDATE PATHS
-import math
 import numpy as np
-from numpy import trapz
-import pandas as pd
 import matplotlib.pyplot as plt
+from scipy.constants import pi
 from pseudo_xrr.eCWM import *
 from pseudo_xrr.data_io import *
+from pseudo_xrr.GIXOS import *
 from pyinstrument import Profiler
 
 #%% routine 2: directly load data from meta and GIXOS will be automatically extracted:
@@ -53,20 +52,20 @@ plt.show()
 _, qxy_dependence_fit = GIXOS_qxy_dependence(GIXOS_ana, GIXOS_ana['metadata']['dependency']['qz_selected'], row_window=3, fit_kappa = True)
 
 #%% processing pseudo
-_ = GIXOS2R(GIXOS_ana, transmission_corr = True, footprint_effect=False, use_approx=False)
-#%%
-RFscaling_ref = GIXOS_ana["metadata"]['I0'] * GIXOS_ana["metadata"]['sample_params']['rho_b'] ** 2 / math.sin(math.radians(GIXOS_ana["metadata"]['instrument']['alpha'])) *GIXOS_ana['talpha_sqr']
+_ = GIXOS2R(GIXOS_ana, transmission_corr = True, footprint_effect=False, use_approx=True)
+# #%%
+# RFscaling_ref = GIXOS_ana["metadata"]['I0'] * GIXOS_ana["metadata"]['sample_params']['rho_b'] ** 2 / np.sin(np.radians(GIXOS_ana["metadata"]['instrument']['alpha'])) *GIXOS_ana['talpha_sqr']
 
-# Create the plot
-plt.figure()
-plt.errorbar(GIXOS_ana["refl"][:,0], GIXOS_ana["refl"][:,1]/GIXOS_ana["fresnel"][:,1], GIXOS_ana["refl"][:,2]/GIXOS_ana["fresnel"][:,1], fmt ='o', markersize = 1, capsize = 3, label = 'pseudoR')
-plt.errorbar(GIXOS_ana["SF"][:,0], GIXOS_ana["SF"][:,1], GIXOS_ana["SF"][:,2], fmt ='o', markersize = 1, capsize = 3, label = 'structure factor')
-# Set log10 scale on the y-axis
-plt.yscale('log')
-# Add labels and title
-plt.xlabel("X values")
-plt.ylabel("Y values rad (log scale)")
-plt.ylim([1e-7, 10])
-plt.legend()
-plt.grid(True, which="both", ls="--", lw=0.5)
-plt.show()
+# # Create the plot
+# plt.figure()
+# plt.errorbar(GIXOS_ana["refl"][:,0], GIXOS_ana["refl"][:,1]/GIXOS_ana["fresnel"][:,1], GIXOS_ana["refl"][:,2]/GIXOS_ana["fresnel"][:,1], fmt ='o', markersize = 1, capsize = 3, label = 'pseudoR')
+# plt.errorbar(GIXOS_ana["SF"][:,0], GIXOS_ana["SF"][:,1], GIXOS_ana["SF"][:,2], fmt ='o', markersize = 1, capsize = 3, label = 'structure factor')
+# # Set log10 scale on the y-axis
+# plt.yscale('log')
+# # Add labels and title
+# plt.xlabel("X values")
+# plt.ylabel("Y values rad (log scale)")
+# plt.ylim([1e-7, 10])
+# plt.legend()
+# plt.grid(True, which="both", ls="--", lw=0.5)
+# plt.show()

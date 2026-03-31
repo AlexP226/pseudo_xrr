@@ -8,7 +8,7 @@ paths:
   path_xrr: "None"
   xrr_datafile:
   gixs_path: "U:/p08/2023/data/11016139/processed/GID/angularrebin/"         
-  path_out: "U:/p08/2023/data/11016139/scratch_cc/"
+  path_out: "D:/github/pseudo_xrr/testing_data/output/"
 
 measurements:
     sample:      "GID_pp4_edta_a_1"
@@ -49,10 +49,6 @@ sample_params:
     temperature: 295        # K
     kappa: 13   # kbT
     amin: 5     # molecular distance
-
-# For Dependency will need to add:
-# DSqxyHW
-# assume_kappa
 
 dependency:
     qz_selected: [0.1, 0.15]

@@ -8,7 +8,7 @@ paths:
   path_xrr: "None"
   xrr_datafile:
   gixs_path: "U:/external/2024/data/50000395/processed/gixos_processed_opls/"         
-  path_out: "U:/external/2024/data/50000395/scratch_cc/"
+  path_out: "D:/github/pseudo_xrr/testing_data/output/"
 
 measurements:
     sample:      "instrument"
@@ -48,10 +48,6 @@ sample_params:
     temperature: 293        # K
     kappa: 20   # kbT
     amin: 5     # molecular distance
-
-# For Dependency will need to add:
-# DSqxyHW
-# assume_kappa
 
 dependency:
     qz_selected: [0.1, 0.15, 0.35]

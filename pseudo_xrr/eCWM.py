@@ -5,9 +5,7 @@ import scipy
 from scipy.integrate import trapezoid, simpson,dblquad,quad # ChatGPT contribution to replace the integration with quad for better performance
 from scipy.special import kv as besselk, jv as besselj, gamma
 from scipy.constants import pi, Boltzmann as kb
-from scipy.optimize import curve_fit
-#from numba import njit
-#@jit(nopython=True, parallel=True)  # Use Numba for performance optimization
+#from scipy.optimize import curve_fit
 from joblib import Parallel, delayed
 
 
