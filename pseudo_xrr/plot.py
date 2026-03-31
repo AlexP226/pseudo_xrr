@@ -7,6 +7,212 @@ Created on Tue Mar 31 11:46:59 2026
 import numpy as np
 import matplotlib.pyplot as plt
 
+def GIXOS_raw_plot(
+    GIXOSdata_q,
+    GIXOSbkg_q,
+    GIXOS_ana,
+    *,
+    metadata=None,
+    title=None,
+    show=True,
+    add_top_qz_axis=True
+):
+    """
+    Plot the effect of GIXOS background correction for the selected qxy0 column.
+
+    This function compares, at the selected qxy0 column:
+
+    - raw GIXOS data
+    - chamber background
+    - chamber-background-subtracted data
+    - bulk background used for subtraction
+    - final corrected data with error bars
+
+    The x-axis is beta (deg), taken from the "tt" field. Optionally, a top
+    axis showing Qz is added if Qz information is available.
+
+    Parameters
+    ----------
+    GIXOSdata_q : dict
+        Raw sample data dictionary after conversion to q-space.
+
+    GIXOSbkg_q : dict
+        Chamber background data dictionary after conversion to q-space.
+
+    GIXOS_ana : dict
+        Output dictionary from `GIXOS_background_corr()`.
+
+    metadata : dict, optional
+        Metadata dictionary. If None, `GIXOS_ana["metadata"]` is used.
+
+    title : str, optional
+        Plot title.
+
+    show : bool, optional
+        If True, show the figure. Default is True.
+
+    add_top_qz_axis : bool, optional
+        If True and Qz is available, add a top x-axis labelled by Qz.
+        Default is True.
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        The generated figure.
+
+    ax : matplotlib.axes.Axes
+        Main axes.
+    """
+    if metadata is None:
+        metadata = GIXOS_ana.get("metadata", None)
+
+    if metadata is None:
+        raise ValueError("metadata is required either explicitly or in GIXOS_ana['metadata'].")
+
+    if "PseudoR" not in metadata or metadata["PseudoR"] is None:
+        raise ValueError("metadata['PseudoR'] is required.")
+    if "qxy0_select_idx" not in metadata["PseudoR"]:
+        raise ValueError("metadata['PseudoR']['qxy0_select_idx'] is required.")
+
+    col_idx = int(metadata["PseudoR"]["qxy0_select_idx"])
+
+    # x-axis: beta / tt
+    beta = np.asarray(GIXOSdata_q["tt"], dtype=float).ravel()
+
+    # raw sample and chamber background
+    y_raw = np.asarray(GIXOSdata_q["Intensity"][:, col_idx], dtype=float).ravel()
+    y_bkg = np.asarray(GIXOSbkg_q["Intensity"][:, col_idx], dtype=float).ravel()
+
+    # chamber-subtracted data
+    y_chamber_sub = y_raw - y_bkg
+
+    # bulk background at selected column
+    if "bulkbkg" not in GIXOS_ana or GIXOS_ana["bulkbkg"] is None:
+        y_bulk = np.full_like(beta, np.nan, dtype=float)
+    else:
+        if "Intensity_at_GIXOS" in GIXOS_ana["bulkbkg"] and GIXOS_ana["bulkbkg"]["Intensity_at_GIXOS"] is not None:
+            bulk_arr = np.asarray(GIXOS_ana["bulkbkg"]["Intensity_at_GIXOS"], dtype=float)
+
+            if bulk_arr.ndim == 2:
+                # if corrected data has had bulk columns removed, shapes may differ
+                if bulk_arr.shape[1] > col_idx:
+                    y_bulk = bulk_arr[:, col_idx].ravel()
+                else:
+                    # fallback: use the last available column if selected col was removed
+                    y_bulk = bulk_arr[:, -1].ravel()
+            else:
+                y_bulk = bulk_arr.ravel()
+        else:
+            y_bulk = np.full_like(beta, np.nan, dtype=float)
+
+    # corrected data and error
+    y_corr = np.asarray(GIXOS_ana["Intensity"][:, col_idx], dtype=float).ravel()
+    err_corr = np.asarray(GIXOS_ana["error"][:, col_idx], dtype=float).ravel()
+
+    fig, ax = plt.subplots(figsize=(5.8, 4.5))
+
+    ax.plot(beta, y_raw, color="k", linewidth=1.4, label="raw GIXOS")
+    ax.plot(beta, y_bkg, color="gray", linewidth=1.4, label="chamber bkg")
+    ax.plot(beta, y_chamber_sub, color="b", linewidth=1.4, label="raw - chamber bkg")
+
+    if np.any(np.isfinite(y_bulk)):
+        ax.plot(beta, y_bulk, color="orange", linewidth=1.6, label="bulk bkg")
+
+    ax.errorbar(
+        beta, y_corr, yerr=err_corr,
+        fmt="o", markersize=4,
+        color="r", ecolor="r",
+        elinewidth=1, capsize=2,
+        label="corrected"
+    )
+
+    ax.axhline(0, color="k", linestyle="--", linewidth=1.0, alpha=0.7)
+
+    ax.set_xlabel(r"$\beta\;[\mathrm{deg}]$")
+    ax.set_ylabel("intensity")
+
+    # title
+    title_lines = []
+    if title is not None:
+        title_lines.append(title)
+    else:
+        title_lines.append("GIXOS background correction")
+
+    if "measurements" in metadata and metadata["measurements"] is not None:
+        scan_val = metadata["measurements"].get("scan", None)
+        if scan_val is not None:
+            scan_arr = np.asarray(scan_val).ravel()
+            if scan_arr.size == 1:
+                title_lines.append(f"scan Id = {int(scan_arr[0])}")
+            elif scan_arr.size > 1:
+                title_lines.append(f"scan Id = {int(np.min(scan_arr))} - {int(np.max(scan_arr))}")
+
+    ax.set_title("\n".join(title_lines))
+
+    ax.legend()
+    
+    # ------------------------------------------------------------
+    # set y-limits using only data above 2*Qc
+    # ------------------------------------------------------------
+    if "sample_params" in metadata and metadata["sample_params"] is not None:
+        Qc = metadata["sample_params"].get("Qc", None)
+    else:
+        Qc = None
+    
+    if Qc is not None and "Qz" in GIXOSdata_q:
+        qz_arr = np.asarray(GIXOSdata_q["Qz"][:, col_idx], dtype=float).ravel()
+        mask_ylim = qz_arr > 2.0 * float(Qc)
+    
+        if np.count_nonzero(mask_ylim) > 3:
+            y_for_ylim = []
+    
+            for arr in [y_raw, y_bkg, y_chamber_sub, y_bulk, y_corr]:
+                arr = np.asarray(arr, dtype=float).ravel()
+                if arr.size == qz_arr.size:
+                    vals = arr[mask_ylim]
+                    vals = vals[np.isfinite(vals)]
+                    if vals.size > 0:
+                        y_for_ylim.append(vals)
+    
+            if len(y_for_ylim) > 0:
+                y_for_ylim = np.concatenate(y_for_ylim)
+    
+                ymin = np.min(y_for_ylim)
+                ymax = np.max(y_for_ylim)
+    
+                if np.isfinite(ymin) and np.isfinite(ymax) and ymax > ymin:
+                    pad = 0.05 * (ymax - ymin)
+                    ax.set_ylim(ymin - pad, ymax + pad)
+    
+    xmin, xmax = ax.get_xlim()
+    ax.set_xlim(left=0, right=xmax)
+    fig.tight_layout()
+
+    # optional top axis: Qz
+    if add_top_qz_axis and "Qz" in GIXOSdata_q:
+        qz_arr = np.asarray(GIXOSdata_q["Qz"][:, col_idx], dtype=float).ravel()
+
+        if qz_arr.size == beta.size and beta.size > 1:
+            ax_top = ax.twiny()
+            ax_top.set_xlim(ax.get_xlim())
+
+            # choose a few tick positions from bottom axis and map nearest beta->Qz
+            beta_ticks = ax.get_xticks()
+            qz_ticklabels = []
+            for bt in beta_ticks:
+                idx = int(np.argmin(np.abs(beta - bt)))
+                qz_ticklabels.append(f"{qz_arr[idx]:.2f}")
+
+            ax_top.set_xticks(beta_ticks)
+            ax_top.set_xticklabels(qz_ticklabels)
+            ax_top.set_xlabel(r"$Q_z\;[\AA^{-1}]$")
+
+    if show:
+        plt.show()
+
+    return fig, ax
+
+
 # -----------------------------------------------------------------------------
 # qxy dependence fit / predict and kappa value
 # -----------------------------------------------------------------------------
@@ -413,6 +619,8 @@ def GIXOS_RRF_plot(
     # -------------------------------------------------------------------------
 
     ax.legend(title=legend_title, title_fontsize=10)
+    xmin, xmax = ax.get_xlim()
+    ax.set_xlim(left=0, right=xmax) 
     fig.tight_layout()
 
     if show:
@@ -622,6 +830,9 @@ def GIXOS_R_plot(
         ax.set_title("Reflectivity analysis")
 
     ax.legend(title=legend_title, title_fontsize=10)
+    
+    xmin, xmax = ax.get_xlim()
+    ax.set_xlim(left=0, right=xmax)
     fig.tight_layout()
 
     if show:

@@ -30,22 +30,17 @@ GIXOSbkg_q = GIXOS_th2q(GIXOSbkg)
 GIXOS_ana = GIXOS_background_corr(GIXOSdata_q, GIXOSbkg_q, bulkbkg_mode = 0, bulkbkg_const_mode= 1, bulkbkg_const_qz_lb= 0.7)
 
 #%%
-# Create the plot
-plt.figure()
-plt.plot(GIXOSdata["tt"], GIXOSdata["Intensity"][:,1])
-plt.plot(GIXOSbkg["tt"], GIXOSbkg["Intensity"][:,1])
-plt.plot(GIXOSdata["tt"], GIXOSdata["Intensity"][:,1]-GIXOSbkg["Intensity"][:,1])
-plt.errorbar(GIXOS_ana["tt"], GIXOS_ana["Intensity"][:,1], yerr = GIXOS_ana["error"][:,1], fmt ='o', markersize = 1, capsize = 3)
-plt.plot(GIXOS_ana["tt"], GIXOS_ana["bulkbkg"]["Intensity_at_GIXOS"][:,1])
-# Set log10 scale on the y-axis
-#plt.yscale('log')
-# Add labels and title
-plt.xlabel("X values")
-plt.ylabel("Y values (log scale)")
-plt.ylim([0, 20000])
-plt.legend()
-plt.grid(True, which="both", ls="--", lw=0.5)
-plt.show()
+fig_GIXOS, ax_GIXOS = GIXOS_background_corr_plot(
+    GIXOSdata_q,
+    GIXOSbkg_q,
+    GIXOS_ana,
+    metadata=GIXOS_ana["metadata"],
+    show=False
+)
+
+outfile = make_filename(GIXOS_ana["metadata"], suffix="GIXOS.png")
+fig_GIXOS.savefig(outfile, dpi=300, bbox_inches="tight")
+
 
 #%% from here on the operation will directly add results into the original dictionary variable (shared memory)
 #%% qxy dependence

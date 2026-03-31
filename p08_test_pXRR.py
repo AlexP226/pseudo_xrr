@@ -38,22 +38,16 @@ GIXOSbkg_q = GIXOS_th2q(GIXOSbkg)
 GIXOS_ana = GIXOS_background_corr(GIXOSdata_q, GIXOSbkg_q, bulkbkg_mode = 2, bulkbkg_offset_lb=0.9)
 
 #%%
-# Create the plot
-plt.figure()
-plt.plot(GIXOSdata["tt"], GIXOSdata["Intensity"][:,2])
-plt.plot(GIXOSbkg["tt"], GIXOSbkg["Intensity"][:,2])
-plt.plot(GIXOSdata["tt"], GIXOSdata["Intensity"][:,2]-GIXOSbkg["Intensity"][:,2])
-plt.errorbar(GIXOS_ana["tt"], GIXOS_ana["Intensity"][:,2], yerr = GIXOS_ana["error"][:,2], fmt ='o', markersize = 1, capsize = 3)
-plt.plot(GIXOS_ana["tt"], GIXOS_ana["bulkbkg"]["Intensity_at_GIXOS"][:,2])
-# Set log10 scale on the y-axis
-#plt.yscale('log')
-# Add labels and title
-plt.xlabel("X values")
-plt.ylabel("Y values (log scale)")
-plt.ylim([0, np.max(GIXOSdata["Intensity"][20:,2])*2])
-plt.legend()
-plt.grid(True, which="both", ls="--", lw=0.5)
-plt.show()
+fig_GIXOS, ax_GIXOS = GIXOS_raw_plot(
+    GIXOSdata_q,
+    GIXOSbkg_q,
+    GIXOS_ana,
+    metadata=GIXOS_ana["metadata"],
+    show=False
+)
+
+outfile = make_filename(GIXOS_ana["metadata"], suffix="GIXOS.png")
+fig_GIXOS.savefig(outfile, dpi=300, bbox_inches="tight")
 
 #%% from here on the operation will directly add results into the original dictionary variable (shared memory)
 #%% qxy dependence
@@ -61,26 +55,6 @@ _, qxy_dependence_fit = GIXOS_qxy_dependence(GIXOS_ana, GIXOS_ana['metadata']['d
 
 #%% processing pseudo
 _ = GIXOS2R(GIXOS_ana, transmission_corr = True, footprint_effect=True, use_approx=True)
-
-# #%%
-# RFscaling_ref = GIXOS_ana["metadata"]['I0'] * GIXOS_ana["metadata"]['sample_params']['rho_b'] ** 2 / np.sin(np.radians(GIXOS_ana["metadata"]['instrument']['alpha'])) *GIXOS_ana['talpha_sqr']
-
-# # Create the plot
-# plt.figure()
-# plt.plot(SF_ref[:,0],SF_ref[:,1]/RFscaling_ref/ (pi / 180) ** 2, label = 'matlab structure factor')
-# plt.errorbar(GIXOS_ana["refl"][:,0], GIXOS_ana["refl"][:,1]/GIXOS_ana["fresnel"][:,1], GIXOS_ana["refl"][:,2]/GIXOS_ana["fresnel"][:,1], fmt ='o', markersize = 1, capsize = 3, label = 'pseudoR')
-# plt.plot(R_ref[:,0],R_ref[:,1]/(0.0218/2/R_ref[:,0])**4/RFscaling_ref/ (pi / 180) ** 2, label = 'matlab pseudoR')
-# plt.errorbar(GIXOS_ana["SF"][:,0], GIXOS_ana["SF"][:,1], GIXOS_ana["SF"][:,2], fmt ='o', markersize = 1, capsize = 3, label = 'structure factor')
-# # Set log10 scale on the y-axis
-# plt.yscale('log')
-# # Add labels and title
-# plt.xlabel("X values")
-# plt.ylabel("Y values rad (log scale)")
-# plt.ylim([1e-7, 10])
-# plt.legend()
-# plt.grid(True, which="both", ls="--", lw=0.5)
-# plt.show()
-
 
 #%% work for qxy dependence
 # np.savetxt("D:/intensity.dat", qxy_dependence["I_sum"])
