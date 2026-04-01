@@ -11,6 +11,7 @@ from scipy.constants import pi
 from pseudo_xrr.eCWM import *
 from pseudo_xrr.data_io import *
 from pseudo_xrr.GIXOS import *
+from pseudo_xrr.data_io import *
 from pyinstrument import Profiler
 
 #%%
@@ -22,7 +23,7 @@ R_ref = np.loadtxt(R_file, skiprows=28)
 
 #%% directly load data from meta and GIXOS will be automatically extracted:
 # alternatively, load_data, geometrical correction, extract_1dGIXOS, and provide metadata into this field
-GIXOSdata, GIXOSbkg = load_gixos_from_meta('./testing_data/p08test_gixos_metadata.yaml') 
+GIXOSdata, GIXOSbkg = load_gixos_from_meta('./testing_data/gixos-process_config_p08test.yaml') 
 
 #%% from here identical 
 #%%binning in tt
@@ -55,6 +56,33 @@ _, qxy_dependence_fit = GIXOS_qxy_dependence(GIXOS_ana, GIXOS_ana['metadata']['d
 
 #%% processing pseudo
 _ = GIXOS2R(GIXOS_ana, transmission_corr = True, footprint_effect=True, use_approx=True)
+
+#%% ---- export configuration ----
+configfilename = make_filename(GIXOS_ana["metadata"], suffix="cfg.yaml")
+save_metadata_yaml(GIXOS_ana["metadata"], configfilename)
+
+
+#%% ------export orso -----------------
+jsonfilename = "U:/p08/2023/data/11016139/beamtime-metadata-11016139.json"
+fiofilename = "U:/p08/2023/data/11016139/raw/pp4_edta_a_1_00137.fio"
+
+Rfilename = make_filename(GIXOS_ana["metadata"], suffix="R.ort")
+_, dataset1 = export_orso(
+    GIXOS_ana,
+    which="refl",
+    exportpath=Rfilename,
+    json_path=jsonfilename,
+    fio_path=fiofilename,
+)
+
+SFfilename = make_filename(GIXOS_ana["metadata"], suffix="SF.ort")
+_, dataset2 = export_orso(
+    GIXOS_ana,
+    which="SF",
+    exportpath=SFfilename,
+    json_path=jsonfilename,
+    fio_path=fiofilename,
+)
 
 #%% work for qxy dependence
 # np.savetxt("D:/intensity.dat", qxy_dependence["I_sum"])

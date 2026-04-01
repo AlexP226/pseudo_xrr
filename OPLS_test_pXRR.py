@@ -14,7 +14,7 @@ from pseudo_xrr.GIXOS import *
 from pyinstrument import Profiler
 
 #%% routine 2: directly load data from meta and GIXOS will be automatically extracted:
-GIXOSdata, GIXOSbkg = load_gixos_from_meta('./testing_data/OPLStest_gixos_metadata.yaml') 
+GIXOSdata, GIXOSbkg = load_gixos_from_meta('./testing_data/gixos-process_config_OPLStest.yaml') 
 
 #%% from here identical 
 #%%binning in tt
@@ -30,7 +30,7 @@ GIXOSbkg_q = GIXOS_th2q(GIXOSbkg)
 GIXOS_ana = GIXOS_background_corr(GIXOSdata_q, GIXOSbkg_q, bulkbkg_mode = 0, bulkbkg_const_mode= 1, bulkbkg_const_qz_lb= 0.7)
 
 #%%
-fig_GIXOS, ax_GIXOS = GIXOS_background_corr_plot(
+fig_GIXOS, ax_GIXOS = GIXOS_raw_plot(
     GIXOSdata_q,
     GIXOSbkg_q,
     GIXOS_ana,
@@ -48,19 +48,24 @@ _, qxy_dependence_fit = GIXOS_qxy_dependence(GIXOS_ana, GIXOS_ana['metadata']['d
 
 #%% processing pseudo
 _ = GIXOS2R(GIXOS_ana, transmission_corr = True, footprint_effect=False, use_approx=True)
-# #%%
-# RFscaling_ref = GIXOS_ana["metadata"]['I0'] * GIXOS_ana["metadata"]['sample_params']['rho_b'] ** 2 / np.sin(np.radians(GIXOS_ana["metadata"]['instrument']['alpha'])) *GIXOS_ana['talpha_sqr']
 
-# # Create the plot
-# plt.figure()
-# plt.errorbar(GIXOS_ana["refl"][:,0], GIXOS_ana["refl"][:,1]/GIXOS_ana["fresnel"][:,1], GIXOS_ana["refl"][:,2]/GIXOS_ana["fresnel"][:,1], fmt ='o', markersize = 1, capsize = 3, label = 'pseudoR')
-# plt.errorbar(GIXOS_ana["SF"][:,0], GIXOS_ana["SF"][:,1], GIXOS_ana["SF"][:,2], fmt ='o', markersize = 1, capsize = 3, label = 'structure factor')
-# # Set log10 scale on the y-axis
-# plt.yscale('log')
-# # Add labels and title
-# plt.xlabel("X values")
-# plt.ylabel("Y values rad (log scale)")
-# plt.ylim([1e-7, 10])
-# plt.legend()
-# plt.grid(True, which="both", ls="--", lw=0.5)
-# plt.show()
+#%% ---- export configuration ----
+configfilename = make_filename(GIXOS_ana["metadata"], suffix="cfg.yaml")
+save_metadata_yaml(GIXOS_ana["metadata"], configfilename)
+
+
+#%%
+#%% ------export orso -----------------
+Rfilename = make_filename(GIXOS_ana["metadata"], suffix="R.ort")
+_, dataset1 = export_orso(
+    GIXOS_ana,
+    which="refl",
+    exportpath=Rfilename,
+)
+
+SFfilename = make_filename(GIXOS_ana["metadata"], suffix="SF.ort")
+_, dataset2 = export_orso(
+    GIXOS_ana,
+    which="SF",
+    exportpath=SFfilename,
+)

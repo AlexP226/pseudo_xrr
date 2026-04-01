@@ -4,6 +4,8 @@ Created on Tue Mar 31 12:25:50 2026
 
 @author: shenc
 """
+from ruamel.yaml import YAML
+from ruamel.yaml.comments import CommentedSeq
 import numpy as np
 import os
 import numbers
@@ -51,7 +53,75 @@ def mean1d_if_within_percent(arr, tol=0.01):
         print("array values vary > tolerance %.2f%%, keep as array" % (tol * 100))
         return a
     
-    
+def yamlify(obj):
+    """
+    Recursively convert numpy objects into YAML-safe Python objects.
+    """
+    if isinstance(obj, dict):
+        return {k: yamlify(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [yamlify(v) for v in obj]
+    elif isinstance(obj, tuple):
+        return [yamlify(v) for v in obj]
+    elif isinstance(obj, np.ndarray):
+        if obj.ndim == 0:
+            return yamlify(obj.item())
+        return obj.tolist()
+    elif isinstance(obj, np.generic):
+        return obj.item()
+    else:
+        return obj  
+
+
+
+def _to_flow_seq(seq):
+    """
+    Convert a sequence into a ruamel flow-style sequence: [a, b, c]
+    """
+    cs = CommentedSeq(seq)
+    cs.fa.set_flow_style()
+    return cs
+
+
+def set_flow_style_lists(meta):
+    """
+    Force selected list-like fields to be written in inline YAML style.
+    """
+    # top-level qxy0
+    if "qxy0" in meta and isinstance(meta["qxy0"], list):
+        meta["qxy0"] = _to_flow_seq(meta["qxy0"])
+
+    # top-level tth
+    if "tth" in meta and isinstance(meta["tth"], list):
+        meta["tth"] = _to_flow_seq(meta["tth"])
+
+    # measurements.scan / bkgscan
+    if "measurements" in meta and isinstance(meta["measurements"], dict):
+        if "scan" in meta["measurements"] and isinstance(meta["measurements"]["scan"], list):
+            meta["measurements"]["scan"] = _to_flow_seq(meta["measurements"]["scan"])
+
+        if "bkgscan" in meta["measurements"] and isinstance(meta["measurements"]["bkgscan"], list):
+            meta["measurements"]["bkgscan"] = _to_flow_seq(meta["measurements"]["bkgscan"])
+
+    # dependency.qz_selected
+    if (
+        "dependency" in meta
+        and isinstance(meta["dependency"], dict)
+        and "qz_selected" in meta["dependency"]
+        and isinstance(meta["dependency"]["qz_selected"], list)
+    ):
+        meta["dependency"]["qz_selected"] = _to_flow_seq(meta["dependency"]["qz_selected"])
+
+    # PseudoR.resolution_HW
+    if (
+        "PseudoR" in meta
+        and isinstance(meta["PseudoR"], dict)
+        and "resolution_HW" in meta["PseudoR"]
+        and isinstance(meta["PseudoR"]["resolution_HW"], list)
+    ):
+        meta["PseudoR"]["resolution_HW"] = _to_flow_seq(meta["PseudoR"]["resolution_HW"])
+
+    return meta
 
 def make_filename(metadata, suffix=None):
     """

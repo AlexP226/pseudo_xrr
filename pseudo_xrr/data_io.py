@@ -1,9 +1,16 @@
 from ruamel.yaml import YAML
+
 import numpy as np
 import pandas as pd
 from scipy.constants import pi, Boltzmann as kb
 import os
 import platform
+
+from orsopy import fileio
+from orsopy.fileio import Reduction, Software, File
+
+from p08_general.P08OrsoIO import P08OrsoIO
+
 from p08_GIXD.p08_GIXD import *
 from pseudo_xrr.helpers import *
 from pseudo_xrr.GIXOS import *
@@ -121,9 +128,9 @@ def load_gixos_from_meta(yaml_path: str):
             importbkg = geometrical_corr(importbkg, Ddet = meta["instrument"]["Ddet"], det_px = meta["instrument"]["pixel"], HWtth = importGIXOSdata["HWtth"][0,0], HWtt = importGIXOSdata["HWtt"][0])
         else:
             print("geometrical correction cannot be performed when HWtth and HWtt are not unified across data")
-        print("extract 1d gixos curve for qxy0 list, each binning %d pixels" %(2*meta["DSpxHW"]))
-        importGIXOSdata = extract_1dGIXOS(importGIXOSdata, tth, HWpx_h = meta["DSpxHW"])
-        importbkg = extract_1dGIXOS(importbkg, tth, HWpx_h = meta["DSpxHW"])       
+        print("extract 1d gixos curve for qxy0 list, each binning %d pixels" %(2*meta["instrument"]["DSpxHW"]))
+        importGIXOSdata = extract_1dGIXOS(importGIXOSdata, tth, HWpx_h = meta["instrument"]["DSpxHW"])
+        importbkg = extract_1dGIXOS(importbkg, tth, HWpx_h = meta["instrument"]["DSpxHW"])       
             
     elif "1d gixos" in datatype.lower():
         if meta["facility"] == "NSLS-II/12ID":
@@ -352,108 +359,646 @@ def load_data(gixosdataprefix, path, metadata = None, datatype = "2d gixs"):
 #   output block
 # ----------------------------------------------------------------------------
 
+def save_metadata_yaml(metadata_dict, filename):
+    """
+    Save metadata as YAML, preserving inline list style for selected fields.
+    """
+    yaml = YAML()
+    yaml.default_flow_style = False
+    yaml.sort_base_mapping_type_on_output = False
+    yaml.indent(mapping=2, sequence=4, offset=2)
+    yaml.width = 4096
 
-def GIXOS_file_output(GIXOS, xrr_config, metadata, tt_step):
-    xrrfilename = f"{metadata['path_out']}{metadata['sample']}_{metadata['scan'][ metadata['qxy0_select_idx'] ]:05d}_R_PYTHON_TEST.dat" # becomes "instrument_46392_R_PYTHON.dat" - qz and dqz columns are very accurate, but R and dR start off semi-accurate but increasingly deviate after ~15th value
-    with open(xrrfilename, 'w') as f:
-        f.write(f"# files\n")
-        f.write(f"sample file: {metadata['sample']}-id{metadata['scan'][ metadata['qxy0_select_idx'] ]}\n")
-        f.write(f"background file: {metadata['bkgsample']}-id{metadata['bkgscan'][ metadata['qxy0_select_idx'] ]}\n")
-        f.write(f"wide angle bkg at qxy0 = {metadata['qxy_bkg']:.6f} /A\n")
-        f.write(f"# geometry\n")
-        f.write(f"energy [eV]: {metadata['energy']:.2f}\n")
-        f.write(f"incidence [deg]: {metadata['alpha']}\n")
-        f.write(f"footprint [mm]: {metadata['footprint']:.1f}\n")
-        f.write(f"sdd [mm]: {metadata['Ddet']:.2f}\n")
-        f.write(f"qxy resolution HWHM at specular [A^-1]: {metadata['DSresHW']}\n")
-        f.write(f"phi_opening [deg]: {metadata['tth_roiHW_real']}\n")
-        f.write(f"beta_step [deg]: {tt_step}\n")
-        f.write(f"# DS-XRR conversion optics setting\n")
-        f.write(f"phi [deg]: {metadata['tth']}\n")
-        f.write(f"qxy(beta=0) [A^-1]: {metadata['qxy0'][ metadata['qxy0_select_idx'] ]}\n")
-        f.write(f"phi integration HW [deg]: {metadata['tth_roiHW_real']}\n")
-        f.write(f"corresponding qxy HW [A^-1]: {metadata['DSqxyHW_real']}\n")
-        f.write(f"R slit: {xrr_config['slit_v']} mm (v) {xrr_config['slit_h']} mm (h) at {xrr_config['sdd']} mm distance, {xrr_config['energy']} eV beam energy\n")
-        f.write(f"scaling: {metadata['RFscaling']}\n")
-        f.write(f"# DS-XRR conversion sample setting\n")
-        f.write(f"tension [N/m]: {metadata['tension']}\n")
-        f.write(f"temperature [K]: {metadata['temperature']:.1f}\n")
-        f.write(f"kappa [kbT]: {metadata['kappa']:.1f}\n")
-        f.write(f"CW short cutoff [A]: {metadata['amin']}\n")
-        f.write(f"CW and Kapa roughness [A]: {GIXOS['refl_roughness'][0]} to {GIXOS['refl_roughness'][-1]}\n")
-        f.write("# data\nqz\tR\tdR\tdqz\n[A^-1]\t[a.u.]\t[a.u.]\t[A^-1]\n")
+    clean_dict = yamlify(metadata_dict)
+    clean_dict = set_flow_style_lists(clean_dict)
 
-    # Save reflectivity data
-    with open(xrrfilename, 'a') as f:
-        np.savetxt(f, GIXOS["refl_recSlit"], delimiter='\t', fmt='%.6e')
-    #    np.savetxt(f, refl_recSlit, delimiter='\t', fmt='%.6e', comments='', header='', encoding='utf-8', newline='\n', append=True)
+    with open(filename, "w", encoding="utf-8") as f:
+        yaml.dump(clean_dict, f)
 
 
-    # ---- FILE 2: DS/(R/RF) ----
-    ds2rrf_filename = f"{metadata['path_out']}{metadata['sample']}_{metadata['scan'][ metadata['qxy0_select_idx'] ]:05d}_DS2RRF_PYTHON_TEST.dat" # becomes "instrument_46392_DS2RRF_PYTHON.dat" - first column, less than 0.1% error ; if we approx at the same decimal point that MATLAB appears to round off at, would be the same values - second column: starts semi close (less than 0.1% error), but deviates heavily by the end (~x2.5 the actual value it is supposed to have)
-    with open(ds2rrf_filename, 'w') as f:
-        f.write(f"# files\n")
-        f.write(f"sample file: {metadata['sample']}-id{metadata['scan'][ metadata['qxy0_select_idx'] ]}\n")
-        f.write(f"background file: {metadata['bkgsample']}-id{metadata['bkgscan'][ metadata['qxy0_select_idx'] ]}\n")
-        f.write(f"wide angle bkg at qxy0 = {metadata['qxy_bkg']:.6f} /A\n")
-        f.write(f"# geometry\n")
-        f.write(f"energy [eV]: {metadata['energy']:.2f}\n")
-        f.write(f"incidence [deg]: {metadata['alpha']}\n")
-        f.write(f"footprint [mm]: {metadata['footprint']:.1f}\n")
-        f.write(f"sdd [mm]: {metadata['Ddet']:.2f}\n")
-        f.write(f"qxy resolution HWHM at specular [A^-1]: {metadata['DSresHW']}\n")
-        f.write(f"phi_opening [deg]: {metadata['tth_roiHW_real']}\n")
-        f.write(f"beta_step [deg]: {tt_step}\n")
-        f.write(f"# DS-XRR conversion optics setting\n")
-        f.write(f"phi [deg]: {metadata['tth']}\n")   
-        f.write(f"qxy(beta=0) [A^-1]: {metadata['qxy0'][ metadata['qxy0_select_idx'] ]}\n")
-        f.write(f"phi integration HW [deg]: {metadata['tth_roiHW_real']}\n")
-        f.write(f"corresponding qxy HW [A^-1]: {metadata['DSqxyHW_real']}\n")
-        f.write(f"R slit: {xrr_config['slit_v']} mm (v) {xrr_config['slit_h']} mm (h) at {xrr_config['sdd']} mm distance, {xrr_config['energy']} eV beam energy\n")
-        f.write(f"scaling: {metadata['RFscaling']}\n")
-        f.write(f"# DS-XRR conversion sample setting\n")
-        f.write(f"tension [N/m]: {metadata['tension']}\n")
-        f.write(f"temperature [K]: {metadata['temperature']:.1f}\n")
-        f.write(f"kappa [kbT]: {metadata['kappa']:.1f}\n")
-        f.write(f"CW short cutoff [A]: {metadata['amin']}\n")
-        f.write(f"CW and Kapa roughness [A]: {GIXOS['refl_roughness'][0]} to {GIXOS['refl_roughness'][-1]}\n")
-        f.write("# data\nqz\tDS/(R/RF)\n[A^-1]\t[a.u.]\n")
-
-    ds_over_rrf = GIXOS["DS_term_integ"] / (xrr_config["Rterm_rect_slit"] / xrr_config["RF"])
-    with open(ds2rrf_filename, 'a') as f:
-        np.savetxt(f, np.column_stack((GIXOS["Qz"], ds_over_rrf)), delimiter='\t', fmt='%.6e')
-    #     np.savetxt(f, np.column_stack((GIXOS["Qz"], ds_over_rrf)), delimiter='\t', fmt='%.6e', comments='', header='', encoding='utf-8', newline='\n', append=True)
+# ----------------------------------------------------------------------------
+# export to Orso format
+# ----------------------------------------------------------------------------
 
 
-    # ---- FILE 3: Structure Factor ----
-    sf_filename = f"{metadata['path_out']}{metadata['sample']}_{metadata['scan'][ metadata['qxy0_select_idx'] ]:05d}_SF_PYTHON_TEST.dat" # becomes "instrument_46392_SF_PYTHON.dat" - first four columns are largely accurate; last 2 columns deviate (first is off by ~8%, second is off by a larger margin but both start semi-close and then increasingly deviate as index increases)
-    with open(sf_filename, 'w') as f:
-        f.write(f"# pure structure factor and kapa/cw roughness with its decay term under given XRR resolution\n")
-        f.write(f"# files\nsample file: {metadata['sample']}-id{metadata['scan'][ metadata['qxy0_select_idx'] ]}\n")
-        f.write(f"background file: {metadata['bkgscan']}-id{metadata['bkgscan'][ metadata['qxy0_select_idx'] ]}\n")
-        f.write(f"wide angle bkg at qxy0 = {metadata['qxy_bkg']:.6f} /A\n")    
-        f.write(f"# geometry\n")
-        f.write(f"energy [eV]: {metadata['energy']:.2f}\n")
-        f.write(f"incidence [deg]: {metadata['alpha']}\n")
-        f.write(f"footprint [mm]: {metadata['footprint']:.1f}\n")
-        f.write(f"sdd [mm]: {metadata['Ddet']:.2f}\n")
-        f.write(f"qxy resolution HWHM at specular [A^-1]: {metadata['DSresHW']}\n")
-        f.write(f"phi_opening [deg]: {metadata['tth_roiHW_real']}\n")
-        f.write(f"beta_step [deg]: {tt_step}\n")
-        f.write(f"# DS-XRR conversion optics setting\n")
-        f.write(f"phi [deg]: {metadata['tth']}\n")   
-        f.write(f"qxy(beta=0) [A^-1]: {metadata['qxy0'][ metadata['qxy0_select_idx'] ]}\n")
-        f.write(f"phi integration HW [deg]: {metadata['tth_roiHW_real']}\n")
-        f.write(f"corresponding qxy HW [A^-1]: {metadata['DSqxyHW_real']}\n")
-        f.write(f"R slit: {xrr_config['slit_v']} mm (v) {xrr_config['slit_h']} mm (h) at {xrr_config['sdd']} mm distance, {xrr_config['energy']} eV beam energy\n")
-        f.write(f"scaling: {metadata['RFscaling']}\n")
-        f.write(f"# DS-XRR conversion sample setting\n")
-        f.write(f"tension [N/m]: {metadata['tension']}\n")
-        f.write(f"temperature [K]: {metadata['temperature']:.1f}\n")
-        f.write(f"kappa [kbT]: {metadata['kappa']:.1f}\n")
-        f.write(f"CW short cutoff [A]: {metadata['amin']}\n")
-        f.write(f"CW and Kapa roughness [A]: {GIXOS['refl_roughness'][0]} to {GIXOS['refl_roughness'][-1]}\n")
-        f.write("# data\nqz\tSF\tdSF\tdQz\tsigma_R\texp(-qz2sigma2)\n[A^-1]\t[a.u.]\t[a.u.]\t[A^-1]\t[A^-1]\t[a.u.]\n")
+def add_chamber_bkg_to_additional_files(io, GIXOS):
+    """
+    Add chamber background scan number(s) to ORSO additional_files.
 
-    with open(sf_filename, 'a') as f:
-        np.savetxt(f, GIXOS["SF"], delimiter='\t', fmt='%.6e')
+    Parameters
+    ----------
+    io : P08OrsoIO-like object
+        ORSO writer object.
+
+    GIXOS : dict
+        GIXOS analysis dictionary containing metadata.
+    """
+    meta = GIXOS.get("metadata", {})
+    meas = meta.get("measurements", {})
+
+    bkg_scan = meas.get("bkgscan", None)
+    if bkg_scan is None:
+        return
+
+    bkg_scan_arr = np.asarray(bkg_scan).ravel()
+    bkg_entries = [f"{int(v):05d}" for v in bkg_scan_arr]
+
+    if io.header.DataSource.measurement["additional_files"] is None:
+        io.header.DataSource.measurement["additional_files"] = []
+
+    for entry in bkg_entries:
+        if entry not in io.header.DataSource.measurement["additional_files"]:
+            io.header.DataSource.measurement["additional_files"].append(entry)
+
+def _fmt_optional_float(val, fmt=".4g"):
+    """
+    Format a scalar value if possible, otherwise return as string.
+    """
+    if val is None:
+        return "None"
+    try:
+        return format(float(val), fmt)
+    except Exception:
+        return str(val)
+
+
+def _build_bulkbkg_correction_text(GIXOS):
+    """
+    Build one-line bulk background correction description
+    for ORSO reduction metadata.
+    """
+    correction_str = "bulk scattering background subtraction: none"
+
+    if "bulkbkg" not in GIXOS or GIXOS["bulkbkg"] is None:
+        return correction_str
+
+    bulk = GIXOS["bulkbkg"]
+
+    # fitting mode
+    if "fit_params" in bulk and bulk["fit_params"] is not None:
+        fitp = bulk["fit_params"]
+        y0 = fitp.get("y0", None)
+        F = fitp.get("F", None)
+        t = fitp.get("t", None)
+
+        bulk_tth = None
+        if "tth" in bulk and bulk["tth"] is not None:
+            bulk_tth_arr = np.asarray(bulk["tth"]).ravel()
+            if bulk_tth_arr.size > 0:
+                bulk_tth = float(np.mean(bulk_tth_arr))
+
+        eq_str = (
+            f"I_bulk = {_fmt_optional_float(y0)} + "
+            f"{_fmt_optional_float(F)}*exp(-Q/{_fmt_optional_float(t)})"
+        )
+
+        if bulk_tth is None:
+            correction_str = (
+                "bulk scattering background subtraction: "
+                f"fit wide-angle data, {eq_str}"
+            )
+        else:
+            correction_str = (
+                "bulk scattering background subtraction: "
+                f"fit wide-angle data at tth = {bulk_tth:.3f} deg, {eq_str}"
+            )
+        return correction_str
+
+    # constant modes
+    const_mode = bulk.get("const_mode", None)
+
+    if const_mode == 0:
+        val = bulk.get("const_value", None)
+        correction_str = (
+            "bulk scattering background subtraction: "
+            f"constant background from user-provided value, "
+            f"value = {_fmt_optional_float(val)}"
+        )
+
+    elif const_mode == 1:
+        qzlb = bulk.get("const_qz_lb", None)
+        correction_str = (
+            "bulk scattering background subtraction: "
+            "constant background from high-Qz average, "
+            f"Qz >= {_fmt_optional_float(qzlb)} /angstrom"
+        )
+
+    elif const_mode == 2:
+        correction_str = (
+            "bulk scattering background subtraction: "
+            "constant background from average of 3 minimum points with Qz > 3Qc"
+        )
+
+    elif "Intensity_at_GIXOS" in bulk:
+        correction_str = (
+            "bulk scattering background subtraction: "
+            "direct subtraction of wide-angle data"
+        )
+
+    return correction_str
+
+
+def build_gixos2r_reduction_metadata(GIXOS, which="refl"):
+    """
+    Build ORSO Reduction metadata for GIXOS2R outputs.
+
+    Detailed settings are appended as extra entries in `corrections`.
+    The `call` field is kept compact and close to the actual workflow.
+
+    Parameters
+    ----------
+    GIXOS : dict
+        Output dictionary from GIXOS analysis / GIXOS2R.
+
+    which : {"refl", "SF", "GIXOS"}, optional
+        Which exported dataset this reduction metadata is intended for.
+
+    Returns
+    -------
+    reduction : orsopy.fileio.Reduction
+        ORSO Reduction metadata object.
+    """
+    meta = GIXOS["metadata"]
+    pr = meta.get("PseudoR", {})
+    samp = meta.get("sample_params", {})
+
+    qidx = int(pr.get("qxy0_select_idx", 0))
+
+    # selected GIXOS point
+    tth_val = None
+    if "tth" in meta and meta["tth"] is not None:
+        tth_arr = np.asarray(meta["tth"]).ravel()
+        if qidx < len(tth_arr):
+            tth_val = float(tth_arr[qidx])
+
+    qxy0_val = None
+    if "qxy0" in meta and meta["qxy0"] is not None:
+        qxy0_arr = np.asarray(meta["qxy0"]).ravel()
+        if qidx < len(qxy0_arr):
+            qxy0_val = float(qxy0_arr[qidx])
+
+    # diffuse scattering resolution used in GIXOS2R
+    ds_phi_hw = None
+    ds_beta_hw = None
+
+    if "HWtth" in GIXOS and GIXOS["HWtth"] is not None:
+        hw_tth = np.asarray(GIXOS["HWtth"], dtype=float)
+        if hw_tth.ndim == 2 and hw_tth.shape[1] > qidx:
+            ds_phi_hw = float(hw_tth[0, qidx])
+        elif hw_tth.size > 0:
+            ds_phi_hw = float(hw_tth.ravel()[0])
+
+    if "HWtt" in GIXOS and GIXOS["HWtt"] is not None:
+        hw_tt = np.asarray(GIXOS["HWtt"], dtype=float).ravel()
+        if hw_tt.size > qidx:
+            ds_beta_hw = float(hw_tt[qidx])
+        elif hw_tt.size > 0:
+            ds_beta_hw = float(hw_tt[0])
+
+    # reflectivity settings
+    resolution_mode = pr.get("resolution_mode", None)
+    resolution_hw = pr.get("resolution_HW", None)
+
+    if resolution_mode == 0:
+        res_str = f"circular, {_fmt_optional_float(resolution_hw)} /angstrom"
+    elif resolution_mode == 1:
+        if isinstance(resolution_hw, (list, tuple, np.ndarray)):
+            res_hw_arr = np.asarray(resolution_hw).ravel()
+            if res_hw_arr.size >= 2:
+                res_str = (
+                    "slit, "
+                    f"[{_fmt_optional_float(res_hw_arr[0])}, "
+                    f"{_fmt_optional_float(res_hw_arr[1])}] mm"
+                )
+            else:
+                res_str = f"slit, {_fmt_optional_float(resolution_hw)} mm"
+        else:
+            res_str = f"slit, {_fmt_optional_float(resolution_hw)} mm"
+    else:
+        res_str = "unknown"
+
+    bkg_mode = pr.get("bkg_mode", None)
+    bkg_off = pr.get("bkg_off", None)
+
+    if bkg_mode is None:
+        bkg_str = "none"
+    elif bkg_mode == 0:
+        bkg_str = f"phi offset, {_fmt_optional_float(bkg_off)} mm"
+    elif bkg_mode == 1:
+        bkg_str = f"beta offset, {_fmt_optional_float(bkg_off)} mm"
+    else:
+        bkg_str = str(bkg_mode)
+
+    # kappa string with optional error
+    kappa = samp.get("kappa", None)
+    kappa_err = samp.get("kappa_err", None)
+    if kappa is None:
+        kappa_str = "None"
+    elif kappa_err is None:
+        kappa_str = f"{float(kappa):.2f} kBT"
+    else:
+        kappa_str = f"{float(kappa):.2f} +/- {float(kappa_err):.2f} kBT"
+
+    kappa_is_fitted = (kappa is not None and kappa_err is not None)
+
+    bulk_corr_str = _build_bulkbkg_correction_text(GIXOS)
+
+    # corrections list
+    corrections = [
+        "chamber background subtraction using 'additional_files'",
+        bulk_corr_str,
+    ]
+
+    if kappa_is_fitted:
+        corrections.append("fit qxy dependence to obtain kappa")
+
+    corrections.extend([
+        "conversion from GIXOS to pseudo-reflectivity / structure factor using GIXOS2R",
+        f"I0 = {_fmt_optional_float(meta.get('I0', None))}",
+        "GIXOS diffuse scattering settings",
+        f"GIXOS tth = {_fmt_optional_float(tth_val)} deg (qxy0 = {_fmt_optional_float(qxy0_val)} /angstrom)",
+        f"delta_phi (HWHM) = {_fmt_optional_float(ds_phi_hw)} deg",
+        f"delta_beta (HWHM) = {_fmt_optional_float(ds_beta_hw)} deg",
+        "reflectivity settings",
+        f"resolution = {res_str}",
+        f"background = {bkg_str}",
+        "sample settings",
+        f"Qc = {_fmt_optional_float(samp.get('Qc', None))} /angstrom",
+        f"tension = {_fmt_optional_float(samp.get('tension', None))} N/m",
+        f"temperature = {_fmt_optional_float(samp.get('temperature', None))} K",
+        f"kappa = {kappa_str}",
+        f"amin = {_fmt_optional_float(samp.get('amin', None))} angstrom",
+    ])
+
+    # compact workflow-style call
+    call_parts = ["GIXOS_background_corr()"]
+    if kappa_is_fitted:
+        call_parts.append("GIXOS_qxy_dependence()")
+    call_parts.append(
+        "GIXOS2R("
+        f"qxy0_select_idx={pr.get('qxy0_select_idx', None)}, "
+        f"resolution_mode={pr.get('resolution_mode', None)}, "
+        f"resolution_HW={pr.get('resolution_HW', None)}, "
+        f"bkg_mode={pr.get('bkg_mode', None)}, "
+        f"bkg_off={pr.get('bkg_off', None)}, "
+        f"tension={_fmt_optional_float(samp.get('tension', None))}, "
+        f"temp={_fmt_optional_float(samp.get('temperature', None))}, "
+        f"kappa={_fmt_optional_float(samp.get('kappa', None))}, "
+        f"amin={_fmt_optional_float(samp.get('amin', None))}"
+        ")"
+    )
+    call_str = "; ".join(call_parts)
+
+    reduction = Reduction(
+        software=[Software(name="pseudo_xrr")],
+        corrections=corrections,
+        call=call_str,
+        comment=None,
+    )
+
+    return reduction
+
+
+
+def export_orso(
+    GIXOS,
+    which="refl",
+    exportpath=None,
+    json_path=None,
+    fio_path=None,
+):
+    """
+    Export processed GIXOS-derived data to an ORSO file.
+
+    This is a general exporter for reflectivity-style outputs derived from
+    GIXOS analysis, such as pseudo-reflectivity or structure factor.
+
+    Parameters
+    ----------
+    GIXOS : dict
+        Processed GIXOS dictionary.
+
+    which : str, optional
+        Which dataset to export.
+        Currently supported:
+        - "refl" : export GIXOS["refl"]
+        - "SF"   : export GIXOS["SF"]
+
+    exportpath : str, optional
+        Output ORSO filename. If None, a default filename is generated.
+
+    json_path : str or None, optional
+        Path to the beamtime metadata JSON file. If not found, export continues
+        with reduced metadata.
+
+    fio_path : str or None, optional
+        Path to the scan .fio file. If not found, export continues with reduced
+        metadata.
+
+    Returns
+    -------
+    io : P08OrsoIO
+        Configured ORSO IO object.
+
+    dataset : orsopy.fileio.orso.OrsoDataset
+        The created ORSO dataset object.
+    """
+    if "metadata" not in GIXOS or GIXOS["metadata"] is None:
+        raise ValueError("GIXOS['metadata'] is required for ORSO export.")
+
+    meta = GIXOS["metadata"]
+    pr = meta.get("PseudoR", {})
+    inst = meta.get("instrument", {})
+    samp = meta.get("sample_params", {})
+    meas = meta.get("measurements", {})
+
+    io = P08OrsoIO()
+    # add chamber bkg file into metadata
+    add_chamber_bkg_to_additional_files(io, GIXOS)
+    # create reduction info for later input
+    reduction = build_gixos2r_reduction_metadata(GIXOS, which=which)
+    # ------------------------------------------------------------
+    # try loading external metadata files, but do not fail if missing
+    # ------------------------------------------------------------
+    if json_path is not None and os.path.isfile(json_path):
+        try:
+            io.load_metadata_from_json(json_path)
+        except Exception as e:
+            print(f"Could not load JSON metadata: {e}")
+    else:
+        if json_path is not None:
+            print(f"JSON metadata file not found: {json_path}")
+
+    if fio_path is not None and os.path.isfile(fio_path):
+        try:
+            io.load_metadata_from_scan(fio_path)
+        except Exception as e:
+            print(f"Could not load FIO metadata: {e}")
+    else:
+        if fio_path is not None:
+            print(f"FIO scan file not found: {fio_path}")
+
+    # populate what is available from P08 files
+    try:
+        io.populate_metadata_to_header()
+    except Exception:
+        pass
+
+    # ------------------------------------------------------------
+    # fill/overwrite header information from runtime metadata
+    # ------------------------------------------------------------
+    sample_name = meas.get("sample", "")
+    scan_val = meas.get("scan", None)
+
+    io.header.SampleName = sample_name
+    io.header.DataReduction = reduction
+    if which == "refl":
+        io.header.DataType = "PseudoR(Qz)"
+        #io.header.DataReduction = "pseudo_xrr / GIXOS2R"
+    elif which == "SF":
+        io.header.DataType = "|Phi(Qz)|^2"
+        #io.header.DataReduction = "pseudo_xrr / GIXOS2R"
+    elif which == "GIXOS":
+        io.header.DataType = "GIXOS(beta)"
+        #io.header.DataReduction = "GIXOS / background correction"
+    else:
+        raise ValueError(f"Unsupported ORSO export type: {which}")
+
+    # sample metadata
+    io.header.DataSource.sample["name"] = sample_name
+
+    # incident angle
+    if "alpha" in inst and inst["alpha"] is not None:
+        io.header.DataSource.instrument_settings["incident_angle"] = fileio.base.Value(
+            inst["alpha"], unit="deg"
+        )
+        io.header.DataSource.instrument_settings["incident_angle"].movement = "fixed"
+
+    # wavelength
+    if "wavelength" in inst and inst["wavelength"] is not None:
+        io.header.DataSource.instrument_settings["wavelength"] = fileio.base.Value(
+            inst["wavelength"], unit="angstrom"
+        )
+
+    # scan ids -> measurement data_files
+    if scan_val is not None:
+        scan_arr = np.asarray(scan_val).ravel()
+        io.scanmetadata["scan_no"] = np.char.zfill(scan_arr.astype(int).astype(str), 5)
+
+    # ------------------------------------------------------------
+    # resolution / ROI metadata from PseudoR
+    # ------------------------------------------------------------
+    if which in ("refl", "SF"):
+        if pr.get("resolution_mode", None) == 0:
+            io.header.DataSource.instrument_settings["roi_specular"] = fileio.base.Value(
+                pr["resolution_HW"], unit="1/angstrom"
+            )
+            io.header.DataSource.instrument_settings["roi_specular"].definition = "HWHM"
+            io.header.DataSource.instrument_settings["roi_specular"].configuration = "circular"
+            io.header.DataSource.instrument_settings["roi_specular"].orientation_normal = "Qxy"
+
+        elif pr.get("resolution_mode", None) == 1:
+            res_hw = np.asarray(pr["resolution_HW"], dtype=float).ravel()
+            io.header.DataSource.instrument_settings["roi_specular"] = fileio.base.ValueVector(
+                res_hw[0], res_hw[1], 0.0, unit="mm"
+            )
+            io.header.DataSource.instrument_settings["roi_specular"].definition = "HWHM"
+            io.header.DataSource.instrument_settings["roi_specular"].configuration = "rectangular vxh"
+            io.header.DataSource.instrument_settings["roi_specular"].orientation_normal = "beta"
+
+        if pr.get("bkg_mode", None) is not None and pr.get("bkg_off", None) is not None:
+            io.header.DataSource.instrument_settings["roi_bkg_offspec"] = fileio.base.Value(
+                pr["bkg_off"], unit="mm"
+            )
+            io.header.DataSource.instrument_settings["roi_bkg_offspec"].use = True
+
+    # ------------------------------------------------------------
+    # choose dataset + ORSO column descriptions
+    # ------------------------------------------------------------
+    io.header.ColDescription = fileio.orso.Orso.empty().columns[:]
+
+    if which == "refl":
+        io.header.ColDescription[0] = fileio.base.Column(
+            name="Qz",
+            unit="1/angstrom",
+            physical_quantity="wavevector transfer"
+        )
+        io.header.ColDescription[1] = fileio.base.Column(
+            name="R",
+            unit=None,
+            physical_quantity="(pseudo)reflectivity, calculated from GIXOS diffuse scattering (R=R*/r)"
+        )
+        io.header.ColDescription.append(
+            fileio.base.ErrorColumn(
+                error_of="R",
+                error_type="uncertainty",
+                value_is="sigma"
+            )
+        )
+        io.header.ColDescription.append(
+            fileio.base.ErrorColumn(
+                error_of="Qz",
+                error_type="resolution",
+                value_is="sigma"
+            )
+        )
+
+        # additional derived columns
+        io.header.ColDescription.append(
+            fileio.base.Column(
+                name="Psi_R",
+                unit=None,
+                physical_quantity="specular roughness factor"
+            )
+        )
+        io.header.ColDescription.append(
+            fileio.base.Column(
+                name="sigma_CW",
+                unit="angstrom",
+                physical_quantity="capillary wave roughness at reflectivity resolution, sqrt(-ln(Psi_R)/Qz^2)"
+            )
+        )
+        io.header.ColDescription.append(
+            fileio.base.Column(
+                name="r_reduced",
+                unit=None,
+                physical_quantity="reduced r (r_reduced = Psi_DS/Psi_R)"
+            )
+        )
+        n_refl = len(GIXOS["refl"])
+        if len(GIXOS["Psi_R"]) != n_refl or len(GIXOS["sigma_CW"]) != n_refl or len(GIXOS["r_reduced"]) != n_refl:
+            raise ValueError(
+                "Psi_R, sigma_CW or r_red must have the same length as GIXOS['refl']."
+            )
+
+        io.Dataset = np.column_stack([
+            np.asarray(GIXOS["refl"][:, 0], dtype=float),   # Qz
+            np.asarray(GIXOS["refl"][:, 1], dtype=float),   # R
+            np.asarray(GIXOS["refl"][:, 2], dtype=float),   # dR
+            np.asarray(GIXOS["refl"][:, 3], dtype=float),   # dQz
+            np.asarray(GIXOS["Psi_R"], dtype=float),        # Psi_R
+            np.asarray(GIXOS["sigma_CW"], dtype=float),     # sigma_CW
+            np.asarray(GIXOS["r_reduced"], dtype=float),     # reduced r
+        ])
+
+    elif which == "SF":
+        io.header.ColDescription[0] = fileio.base.Column(
+            name="Qz",
+            unit="1/angstrom",
+            physical_quantity="wavevector transfer"
+        )
+    
+        io.header.ColDescription[1] = fileio.base.Column(
+            name="SF*RF",
+            unit=None,
+            physical_quantity="structure factor times Fresnel reflectivity (|Phi|^2*RF)"
+        )
+        io.header.ColDescription.append(
+            fileio.base.ErrorColumn(
+                error_of="SF*RF",
+                error_type="uncertainty",
+                value_is="sigma"
+            )
+        )
+        io.header.ColDescription.append(
+            fileio.base.ErrorColumn(
+                error_of="Qz",
+                error_type="resolution",
+                value_is="sigma"
+            )
+        )
+    
+        io.header.ColDescription.append(
+            fileio.base.Column(
+                name="SF",
+                unit=None,
+                physical_quantity="structure factor (|Phi|^2 = R*/Psi_DS/prefactor_DS)"
+            )
+        )
+        io.header.ColDescription.append(
+            fileio.base.ErrorColumn(
+                error_of="SF",
+                error_type="uncertainty",
+                value_is="sigma"
+            )
+        )
+    
+        io.header.ColDescription.append(
+            fileio.base.Column(
+                name="Psi_DS",
+                unit=None,
+                physical_quantity="roughness factor of the GIXOS diffuse scattering R*"
+            )
+        )
+    
+        io.header.ColDescription.append(
+            fileio.base.Column(
+                name="prefactor_DS",
+                unit=None,
+                physical_quantity="diffuse scattering prefactor (ta^2*tb^2*(Qc/2/Qz)^4)"
+            )
+        )
+    
+        n_sf = len(GIXOS["SF"])
+        if len(GIXOS["fresnel"][:, 1]) != n_sf:
+            raise ValueError("GIXOS['fresnel'] must have the same length as GIXOS['SF'].")
+        if len(GIXOS["Psi_DS"]) != n_sf:
+            raise ValueError("GIXOS['Psi_DS'] must have the same length as GIXOS['SF'].")
+        if len(GIXOS["prefactor_DS"]) != n_sf:
+            raise ValueError("GIXOS['prefactor_DS'] must have the same length as GIXOS['SF'].")
+    
+        SF = np.asarray(GIXOS["SF"], dtype=float)
+        RF = np.asarray(GIXOS["fresnel"][:, 1], dtype=float)
+        Psi_DS = np.asarray(GIXOS["Psi_DS"], dtype=float)
+        pref_DS = np.asarray(GIXOS["prefactor_DS"], dtype=float)
+    
+        io.Dataset = np.column_stack([
+            SF[:, 0],          # Qz
+            SF[:, 1] * RF,     # SF * RF
+            SF[:, 2] * RF,     # d(SF * RF)
+            SF[:, 3],          # dQz
+            SF[:, 1],          # SF
+            SF[:, 2],          # dSF
+            Psi_DS,            # Psi_DS
+            pref_DS,           # prefactor_DS
+        ])
+
+    elif which == "GIXOS":
+        qidx = int(pr["qxy0_select_idx"])
+        io.header.ColDescription[0] = fileio.base.Column(
+            name="beta", unit="deg", physical_quantity="angle"
+        )
+        io.header.ColDescription[1] = fileio.base.Column(
+            name="I", unit=None, physical_quantity="intensity"
+        )
+        io.header.ColDescription.append(
+            fileio.base.ErrorColumn(error_of="I", error_type="uncertainty", value_is="sigma")
+        )
+        io.Dataset = np.column_stack([
+            np.asarray(GIXOS["tt"], dtype=float).ravel(),
+            np.asarray(GIXOS["Intensity"][:, qidx], dtype=float).ravel(),
+            np.asarray(GIXOS["error"][:, qidx], dtype=float).ravel(),
+        ])
+
+    # ------------------------------------------------------------
+    # generate default export path if needed
+    # ------------------------------------------------------------
+    if exportpath is None:
+        suffix_map = {
+            "refl": "refl.ort",
+            "SF": "SF.ort",
+            "GIXOS": "GIXOS.ort",
+        }
+        if "paths" in meta and "path_out" in meta["paths"]:
+            exportpath = os.path.join(meta["paths"]["path_out"], suffix_map[which])
+        else:
+            exportpath = suffix_map[which]
+
+    # ------------------------------------------------------------
+    # convert to ORSO datasource and write file
+    # ------------------------------------------------------------
+    io.populate_metadata_to_orsodatasource()
+    dataset = io.create_orsodataset(exportpath=exportpath)
+
+    return io, dataset
+

@@ -24,12 +24,11 @@ instrument:
     alpha:  0.07      # must
     Ddet:     560.7     # optional, for geometrical correction, footprint correction
     pixel:    0.075     # optional, for geometrical correction
+    DSpxHW:  6          # [pixels] mandatory for 2d gixs, half width of the integrating region on detector
     #HWtth:    0.004     # [deg] optional, mandatory for 1d gixs, half width of the GIXOS pixel in tth
-    #HWtt:     0.004     # [deg] optional, half width of the pixel in tt
     footprint: 60       # [mm] optional, for footprint correction
 
 qxy0: [0.005, 0.01, 0.015, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.11, 0.12, 0.14, 0.16, 0.35, 0.37, 0.39, 0.41, 0.43, 0.45]
-DSpxHW:  6
 qxy_bkg: 0.3
 
 PseudoR:

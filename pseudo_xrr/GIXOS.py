@@ -1087,7 +1087,7 @@ def GIXOS_qxy_dependence(
 
 
 # processing into SF and RRF
-def GIXOS2R(GIXOS, transmission_corr = False, footprint_effect = False, use_approx = False, plot=True,):
+def GIXOS2R(GIXOS, transmission_corr = False, footprint_effect = False, use_approx = False, plot=True):
     """
     Convert GIXOS intensity into pseudo-reflectivity and structure factor.
 
@@ -1143,6 +1143,7 @@ def GIXOS2R(GIXOS, transmission_corr = False, footprint_effect = False, use_appr
         If True, plot the R/RF and R with SF, GIXOS and Psi_R.
 
         Default is True.
+        
     Returns
     -------
     GIXOS : dict
@@ -1397,5 +1398,6 @@ def GIXOS2R(GIXOS, transmission_corr = False, footprint_effect = False, use_appr
         Rplotname = make_filename(GIXOS["metadata"], suffix="R.png")
         fig_RRF.savefig(RRFplotname, dpi=300, bbox_inches="tight")
         fig_R.savefig(Rplotname, dpi=300, bbox_inches="tight")
+    
     
     return GIXOS # outputs GIXOS with reflectivity and structure factor added as new columns

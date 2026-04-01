@@ -25,7 +25,6 @@ instrument:
     Ddet:     710.0     # optional, for geometrical correction, footprint correction
     pixel:    0.172     # optional, for geometrical correction
     HWtth:    0.0486     # [deg] optional, mandatory for 1d gixs, half width of the GIXOS pixel in tth
-    #HWtt:     0.004     # [deg] optional, half width of the pixel in tt
     footprint: 10       # [mm] optional, for footprint correction
 
 qxy0: [0.04,0.05,0.06,0.08,0.1,0.15]
