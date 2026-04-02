@@ -90,7 +90,3 @@ _, dataset2 = export_orso(
     fio_path=fiofilename,
 )
 
-#%% work for qxy dependence
-# np.savetxt("D:/intensity.dat", qxy_dependence["I_sum"])
-# np.savetxt("D:/Qxy.dat", qxy_dependence["Qxy"])
-

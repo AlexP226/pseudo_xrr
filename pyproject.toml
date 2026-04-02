@@ -7,27 +7,39 @@ name = "pseudo_xrr"
 version = "0.1.0"
 description = "Package for X-ray reflectivity and GIXOS data analysis"
 readme = "README.rst"
-authors = [{ name = "AUTHORS.rst" }]
+authors = [
+  { name = "Brookhaven National Lab" }
+]
 license = { file = "LICENSE" }
 classifiers = [
-    "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
-    "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
 ]
 requires-python = ">=3.10"
 dependencies = [
-    "numpy",
-    "pandas",
-    "matplotlib",
-    "scipy",
-    "pyyaml",
-    "ipython",
-    "joblib"
+  "numpy",
+  "pandas",
+  "matplotlib",
+  "scipy",
+  "pyyaml",
+  "ruamel.yaml",
+  "ipython",
+  "joblib",
+  "orsopy",
+  "h5py",
 ]
 
 [project.urls]
-"Homepage" = "https://github.com/username/pseudo_xrr"
-"Bug Tracker" = "https://github.com/username/pseudo_xrr/issues"
+Homepage = "https://github.com/AlexP226/pseudo_xrr"
+"Bug Tracker" = "https://github.com/AlexP226/pseudo_xrr/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = [
+  "pseudo_xrr",
+  "p08_general",
+  "xray_general_io",
+]
 
 [tool.black]
 line-length = 115
@@ -43,8 +55,6 @@ exclude = '''
   | buck-out
   | build
   | dist
-
-  # The following are specific to Black, you probably don't want those.
   | blib2to3
   | tests/data
 )/

@@ -60,8 +60,6 @@ _ = GIXOS2R(GIXOS_ana, transmission_corr = True, footprint_effect=False, use_app
 configfilename = make_filename(GIXOS_ana["metadata"], suffix="cfg.yaml")
 save_metadata_yaml(GIXOS_ana["metadata"], configfilename)
 
-
-#%%
 #%% ------export orso -----------------
 Rfilename = make_filename(GIXOS_ana["metadata"], suffix="R.ort")
 _, dataset1 = export_orso(

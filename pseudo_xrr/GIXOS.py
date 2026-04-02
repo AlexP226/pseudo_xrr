@@ -123,44 +123,6 @@ def GIXOS_th2q(GIXOS):
     return GIXOS
 
 
-# def GIXOS_th2q_old(inputdata):
-#     """
-#     create q axises from the angular axises
-#     Parameters
-#     ----------
-#     inputdata : dictionary
-#         required fields:
-#             'Intensity':    intensity map, 2d or one line cut,
-#             'tth':          tth axis in deg, 
-#             'tt':           tt axis in deg, 
-#             'metadata':     ['instrument'] with 'energy' (eV) and 'alpha' (deg)
-#     Returns
-#     -------
-#     outputdata : dictionary
-#         same field of inputdata
-#         additional fields:
-#             'Qxy':  (1/A)
-#             'Qz':   (1/A)
-#             'Q':    (1/A)
-
-#     """
-#     outputdata = None
-#     if (inputdata["metadata"] is None) or ("instrument" not in inputdata["metadata"]) or (inputdata["metadata"]["instrument"] is None) or (not check_keys_numeric(["energy", "alpha"], inputdata["metadata"]["instrument"])):
-#         print("please provide energy [eV] and incident angle (alpha) [deg] in the ['metadata']['instrument']")
-#         return
-        
-#     inputdata['mat'] = inputdata.pop('Intensity')    
-#     # calculate qxy, qz, and q, use the th2q function from p08_GIXD, it requires the intensity to be called mat
-#     outputdata = th2q(inputdata, energy = inputdata["metadata"]["instrument"]["energy"], alpha_i = inputdata["metadata"]["instrument"]["alpha"], absQxy = False)
-#     outputdata["Q"] = np.sqrt(outputdata["Qxy"]**2 + outputdata["Qz"]**2)
-#     for key in inputdata.keys(): 
-#         if key not in ['mat', 'Qxy', 'Qz', 'Q']:
-#             outputdata[key] = inputdata[key]
-#     # swap back the key to intensity
-#     inputdata['Intensity'] = inputdata.pop('mat')
-#     outputdata['Intensity'] = outputdata.pop('mat')
-#     return outputdata
-
 def extract_1dGIXOS(gixs2d, tth_array, HWpx_h = 5):
     """
     extract 1d GIXOS cut from the loaded 2d gixs image (in tth-tt corridnate), at given tth positions; the image pixel HW should be given
