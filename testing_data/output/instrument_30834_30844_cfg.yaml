@@ -1,49 +1,49 @@
-facility: NSLS-II/12ID
-datatype: 1d gixos
-geometrical_correction: true
-paths:
-  path_xrr: None
-  xrr_datafile:
-  gixs_path: U:\external\2024\data\50000395\processed\gixos_processed_opls\
-  path_out: D:\github\pseudo_xrr\testing_data\output\
-measurements:
-  sample: instrument
-  scan: [30834, 30836, 30838, 30840, 30842, 30844]
-  bkgsample: instrument
-  bkgscan: [30835, 30837, 30839, 30841, 30843, 30845]
-  flux: 270000000000.0
-  cttime_sample: 1
-  cttime_bkg: 1
-instrument:
-  energy: 14400
-  alpha: 0.0728
-  Ddet: 710.0
-  pixel: 0.172
-  HWtth: 0.0486
-  footprint: 10
-  wavelength: 0.8613888888888889
-qxy0: [0.04, 0.05, 0.06, 0.08, 0.1, 0.15]
 DSpxHW: 3.5
+I0: 270000000000.0
 PseudoR:
-  qxy0_select_idx: 0
-  resolution_mode: 1
-  resolution_HW: [0.33, 0.5]
-  energy: 14400.0
   Ddet: 1039.9
   bkg_mode: 0
   bkg_off: 1.0
+  energy: 14400.0
+  qxy0_select_idx: 0
+  resolution_HW: [0.33, 0.5]
+  resolution_mode: 1
+datatype: 1d gixos
+dependency:
+  kappa_deviation: 3
+  qz_selected: [0.1, 0.15, 0.35]
+facility: NSLS-II/12ID
+geometrical_correction: true
+instrument:
+  Ddet: 710.0
+  HWtth: 0.0486
+  alpha: 0.0728
+  energy: 14400
+  footprint: 10
+  pixel: 0.172
+  wavelength: 0.8613888888888889
+measurements:
+  bkgsample: instrument
+  bkgscan: [30835, 30837, 30839, 30841, 30843, 30845]
+  cttime_bkg: 1
+  cttime_sample: 1
+  flux: 270000000000.0
+  sample: instrument
+  scan: [30834, 30836, 30838, 30840, 30842, 30844]
+paths:
+  gixs_path: U:\external\2024\data\50000395\processed\gixos_processed_opls\
+  path_out: D:\github\pseudo_xrr\testing_data\output\
+  path_xrr: None
+  xrr_datafile:
+qxy0: [0.04, 0.05, 0.06, 0.08, 0.1, 0.15]
 sample_params:
   Qc: 0.0218
-  tension: 0.028
-  temperature: 293
-  kappa: 18.73934670725675
   amin: 5
+  kappa: 18.73934670725675
   rho_b: 9.454599394374042e-06
+  temperature: 293
+  tension: 0.028
   kappa_err: 8.259029185039202
   kappa_fit_success: true
-dependency:
-  qz_selected: [0.1, 0.15, 0.35]
-  kappa_deviation: 3
-xrr_data:
 tth: [0.3141973841618452, 0.39274700701491044, 0.4712968144114286, 0.6283971304773902, 0.7854986276551649, 1.1782594760338996]
-I0: 270000000000.0
+xrr_data:

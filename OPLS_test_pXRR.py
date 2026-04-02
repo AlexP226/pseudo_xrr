@@ -13,6 +13,7 @@ from pseudo_xrr.data_io import *
 from pseudo_xrr.GIXOS import *
 from pyinstrument import Profiler
 
+
 #%% routine 2: directly load data from meta and GIXOS will be automatically extracted:
 GIXOSdata, GIXOSbkg = load_gixos_from_meta('./testing_data/gixos-process_config_OPLStest.yaml') 
 
@@ -41,6 +42,12 @@ fig_GIXOS, ax_GIXOS = GIXOS_raw_plot(
 outfile = make_filename(GIXOS_ana["metadata"], suffix="GIXOS.png")
 fig_GIXOS.savefig(outfile, dpi=300, bbox_inches="tight")
 
+#%% export corrected GIXOS
+outgixosfile = make_filename(GIXOS_ana["metadata"], suffix="gixos.h5")
+export_gixos_nxs(GIXOS_ana, outgixosfile)
+
+#%% load back GIXOS
+GIXOS_back = load_gixos_nxs(outgixosfile)
 
 #%% from here on the operation will directly add results into the original dictionary variable (shared memory)
 #%% qxy dependence

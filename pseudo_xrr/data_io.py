@@ -1,10 +1,13 @@
 from ruamel.yaml import YAML
+import json
+import h5py
 
 import numpy as np
 import pandas as pd
 from scipy.constants import pi, Boltzmann as kb
 import os
 import platform
+from pathlib import Path
 
 from orsopy import fileio
 from orsopy.fileio import Reduction, Software, File
@@ -1174,3 +1177,327 @@ def export_orso(
 
     return io, dataset
 
+
+
+
+
+# ----------------------------------------------------------------------------
+# helper for recursive HDF5 storage of Python / NumPy objects
+# ----------------------------------------------------------------------------
+
+def _to_hdf5_compatible(obj):
+    """
+    Convert Python / NumPy objects into HDF5-storable equivalents.
+    """
+    if isinstance(obj, dict):
+        return {k: _to_hdf5_compatible(v) for k, v in obj.items()}
+
+    if isinstance(obj, np.ndarray):
+        return obj
+
+    if isinstance(obj, np.generic):
+        return obj.item()
+
+    if isinstance(obj, (str, bytes, int, float, bool)):
+        return obj
+
+    if obj is None:
+        return None
+
+    if isinstance(obj, tuple):
+        obj = list(obj)
+
+    if isinstance(obj, list):
+        # try homogeneous numeric array first
+        try:
+            arr = np.asarray(obj)
+            if arr.dtype != object:
+                return arr
+        except Exception:
+            pass
+        return [_to_hdf5_compatible(v) for v in obj]
+
+    # fallback
+    return json.dumps(obj)
+
+
+def _write_obj_to_hdf5(h5group, name, obj):
+    """
+    Recursively write an object into an HDF5 group.
+    """
+    obj = _to_hdf5_compatible(obj)
+
+    if isinstance(obj, dict):
+        subgrp = h5group.create_group(name)
+        subgrp.attrs["_py_type"] = "dict"
+        for k, v in obj.items():
+            _write_obj_to_hdf5(subgrp, str(k), v)
+        return
+
+    if obj is None:
+        ds = h5group.create_dataset(name, data=np.array([], dtype=float))
+        ds.attrs["_py_type"] = "none"
+        return
+
+    if isinstance(obj, list):
+        subgrp = h5group.create_group(name)
+        subgrp.attrs["_py_type"] = "list"
+        for i, v in enumerate(obj):
+            _write_obj_to_hdf5(subgrp, f"{i:08d}", v)
+        return
+
+    if isinstance(obj, str):
+        ds = h5group.create_dataset(name, data=np.bytes_(obj))
+        ds.attrs["_py_type"] = "str"
+        return
+
+    if isinstance(obj, bytes):
+        ds = h5group.create_dataset(name, data=np.bytes_(obj))
+        ds.attrs["_py_type"] = "bytes"
+        return
+
+    if isinstance(obj, bool):
+        ds = h5group.create_dataset(name, data=np.bool_(obj))
+        ds.attrs["_py_type"] = "bool"
+        return
+
+    if isinstance(obj, (int, float)):
+        ds = h5group.create_dataset(name, data=obj)
+        ds.attrs["_py_type"] = type(obj).__name__
+        return
+
+    if isinstance(obj, np.ndarray):
+        ds = h5group.create_dataset(name, data=obj)
+        ds.attrs["_py_type"] = "ndarray"
+        return
+
+    ds = h5group.create_dataset(name, data=np.bytes_(str(obj)))
+    ds.attrs["_py_type"] = "str_fallback"
+
+
+def _read_obj_from_hdf5(node):
+    """
+    Recursively reconstruct an object from HDF5.
+    """
+    if isinstance(node, h5py.Group):
+        py_type = node.attrs.get("_py_type", None)
+
+        if py_type == "list":
+            keys = sorted(node.keys())
+            return [_read_obj_from_hdf5(node[k]) for k in keys]
+
+        out = {}
+        for k in node.keys():
+            out[k] = _read_obj_from_hdf5(node[k])
+        return out
+
+    py_type = node.attrs.get("_py_type", None)
+    data = node[()]
+
+    if py_type == "none":
+        return None
+
+    if py_type in ("str", "bytes", "str_fallback"):
+        if isinstance(data, bytes):
+            return data.decode("utf-8")
+        if isinstance(data, np.bytes_):
+            return bytes(data).decode("utf-8")
+        return str(data)
+
+    if py_type == "bool":
+        return bool(data)
+
+    if py_type == "int":
+        return int(data)
+
+    if py_type == "float":
+        return float(data)
+
+    if py_type == "ndarray":
+        return np.array(data)
+
+    arr = np.array(data)
+
+    if arr.shape == ():
+        val = arr.item()
+        if isinstance(val, bytes):
+            return val.decode("utf-8")
+        return val
+
+    return arr
+
+
+# ----------------------------------------------------------------------------
+# Nexus / NXsas export and import for GIXOS
+# ----------------------------------------------------------------------------
+
+def export_gixos_nxs(
+    GIXOS,
+    filename,
+    *,
+    entry_name="entry",
+    store_full_dict=True,
+    compression="gzip"
+):
+    """
+    Export background-corrected GIXOS data to a Nexus/HDF5 file with an NXsas-style core.
+
+    Stored NXsas-style data
+    -----------------------
+    /entry
+      definition = "NXsas"
+      data (NXdata)
+        img_gid_q : 3D array, shape (1, n_beta, n_qxy)
+        q_z       : 2D array, shape (n_beta, n_qxy)
+        q_xy      : 2D array, shape (n_beta, n_qxy)
+        tt        : beta axis
+        tth       : tth axis
+
+    Additional round-trip storage
+    -----------------------------
+    /entry/gixos_dict/root
+        full recursively stored GIXOS dictionary
+
+    Parameters
+    ----------
+    GIXOS : dict
+        Background-corrected GIXOS dictionary.
+
+    filename : str or pathlib.Path
+        Output .nxs / .h5 filename.
+
+    entry_name : str, optional
+        Name of the NXentry group. Default is "entry".
+
+    store_full_dict : bool, optional
+        If True, store a full recursive copy of GIXOS under
+        /entry/gixos_dict/root for exact reconstruction.
+
+    compression : str or None, optional
+        Compression for HDF5 datasets, e.g. "gzip". Default is "gzip".
+
+    Returns
+    -------
+    None
+    """
+    filename = Path(filename)
+
+    intensity = np.asarray(GIXOS["Intensity"], dtype=float)
+    qz = np.asarray(GIXOS["Qz"], dtype=float)
+    qxy = np.asarray(GIXOS["Qxy"], dtype=float)
+
+    # NXsas-like main signal with leading image dimension
+    img_gid_q = intensity[np.newaxis, :, :]
+
+    tt = np.asarray(GIXOS.get("tt", []), dtype=float)
+    tth = np.asarray(GIXOS.get("tth", []), dtype=float)
+
+    with h5py.File(filename, "w") as f:
+        entry = f.create_group(entry_name)
+        entry.attrs["NX_class"] = "NXentry"
+        entry.create_dataset("definition", data=np.bytes_("NXsas"))
+
+        # optional title
+        title = ""
+        try:
+            title = GIXOS.get("metadata", {}).get("measurements", {}).get("sample", "")
+        except Exception:
+            title = ""
+        if title:
+            entry.create_dataset("title", data=np.bytes_(str(title)))
+
+        data_grp = entry.create_group("data")
+        data_grp.attrs["NX_class"] = "NXdata"
+
+        ds_img = data_grp.create_dataset(
+            "img_gid_q",
+            data=img_gid_q,
+            compression=compression
+        )
+        ds_qz = data_grp.create_dataset(
+            "q_z",
+            data=qz,
+            compression=compression
+        )
+        ds_qxy = data_grp.create_dataset(
+            "q_xy",
+            data=qxy,
+            compression=compression
+        )
+        ds_tt = data_grp.create_dataset("tt", data=tt)
+        ds_tth = data_grp.create_dataset("tth", data=tth)
+
+        data_grp.attrs["signal"] = "img_gid_q"
+
+        ds_qz.attrs["units"] = "/angstrom"
+        ds_qxy.attrs["units"] = "/angstrom"
+        ds_tt.attrs["units"] = "deg"
+        ds_tth.attrs["units"] = "deg"
+
+        ds_img.attrs["long_name"] = "background corrected GIXOS intensity"
+        ds_qz.attrs["long_name"] = "Qz"
+        ds_qxy.attrs["long_name"] = "Qxy"
+        ds_tt.attrs["long_name"] = "beta"
+        ds_tth.attrs["long_name"] = "tth"
+
+        if store_full_dict:
+            dict_grp = entry.create_group("gixos_dict")
+            dict_grp.attrs["NX_class"] = "NXcollection"
+            _write_obj_to_hdf5(dict_grp, "root", GIXOS)
+
+
+def load_gixos_nxs(
+    filename,
+    *,
+    entry_name="entry",
+    prefer_full_dict=True
+):
+    """
+    Load a GIXOS dictionary from a Nexus/HDF5 file created by export_gixos_nxs().
+
+    Parameters
+    ----------
+    filename : str or pathlib.Path
+        Input .nxs / .h5 filename.
+
+    entry_name : str, optional
+        NXentry group name. Default is "entry".
+
+    prefer_full_dict : bool, optional
+        If True and /entry/gixos_dict/root exists, reconstruct and return
+        the full stored dictionary.
+        Otherwise return a minimal dictionary built from /entry/data.
+
+    Returns
+    -------
+    GIXOS : dict
+        Reconstructed GIXOS dictionary.
+    """
+    filename = Path(filename)
+
+    with h5py.File(filename, "r") as f:
+        entry = f[entry_name]
+
+        if prefer_full_dict and "gixos_dict" in entry:
+            dict_grp = entry["gixos_dict"]
+            if "root" in dict_grp:
+                return _read_obj_from_hdf5(dict_grp["root"])
+
+        # fallback minimal reconstruction
+        data_grp = entry["data"]
+
+        img_gid_q = np.asarray(data_grp["img_gid_q"])
+        qz = np.asarray(data_grp["q_z"])
+        qxy = np.asarray(data_grp["q_xy"])
+        tt = np.asarray(data_grp["tt"])
+        tth = np.asarray(data_grp["tth"])
+
+        GIXOS = {
+            "Intensity": img_gid_q[0],
+            "Qz": qz,
+            "Qxy": qxy,
+            "tt": tt,
+            "tth": tth,
+        }
+
+        return GIXOS

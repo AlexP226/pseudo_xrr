@@ -47,12 +47,19 @@ fig_GIXOS, ax_GIXOS = GIXOS_raw_plot(
     show=False
 )
 
-outfile = make_filename(GIXOS_ana["metadata"], suffix="GIXOS.png")
-fig_GIXOS.savefig(outfile, dpi=300, bbox_inches="tight")
+outfigname = make_filename(GIXOS_ana["metadata"], suffix="GIXOS.png")
+fig_GIXOS.savefig(outfigname, dpi=300, bbox_inches="tight")
+
+#%% export corrected GIXOS
+outgixosfile = make_filename(GIXOS_ana["metadata"], suffix="gixos.h5")
+export_gixos_nxs(GIXOS_ana, outgixosfile)
+
+#%% load back GIXOS
+GIXOS_back = load_gixos_nxs(outgixosfile)
 
 #%% from here on the operation will directly add results into the original dictionary variable (shared memory)
 #%% qxy dependence
-_, qxy_dependence_fit = GIXOS_qxy_dependence(GIXOS_ana, GIXOS_ana['metadata']['dependency']['qz_selected'], fit_kappa = True)
+_, qxy_dependence_fit = GIXOS_qxy_dependence(GIXOS_ana, GIXOS_back['metadata']['dependency']['qz_selected'], fit_kappa = True)
 
 #%% processing pseudo
 _ = GIXOS2R(GIXOS_ana, transmission_corr = True, footprint_effect=True, use_approx=True)
