@@ -1,5 +1,5 @@
 # # ORSO reflectivity data file | 1.2 standard | YAML encoding | https://www.reflectometry.org/
-# #  |  | instrument | |Phi(Qz)|^2
+# #  | 2026-04-02 | instrument | |Phi(Qz)|^2
 # data_source:
 #   owner:
 #     name: ''
@@ -11,7 +11,7 @@
 #     instrument: ''
 #     start_date: ''
 #     probe: x-ray
-#     facility: DESY
+#     facility: ''
 #     proposalID: ''
 #   sample:
 #     name: instrument
@@ -38,20 +38,29 @@
 #     - '30843'
 #     - '30845'
 #     scheme: angle-dispersive
+#     comment: ''
 # reduction:
 #   software: {name: '[Software(name=''pseudo_xrr'', version=None, platform=None, comment=None)]'}
 #   corrections:
+#   - pixel geometrical correction (solid angle)
+#   - bin beta
+#   - angle to Q space
 #   - chamber background subtraction using 'additional_files'
 #   - 'bulk scattering background subtraction: constant background from high-Qz average,
 #     Qz >= 0.7 /angstrom'
 #   - fit qxy dependence to obtain kappa
+#   - qz = [0.1, 0.15, 0.35] /angstrom (row [4, 7, 19])
+#   - qxy0 range = [0.04, 0.05, 0.06, 0.08, 0.1, 0.15] /angstrom
 #   - conversion from GIXOS to pseudo-reflectivity / structure factor using GIXOS2R
+#   - beta transmission correction
 #   - I0 = 2.7e+11
 #   - GIXOS diffuse scattering settings
 #   - GIXOS tth = 0.3142 deg (qxy0 = 0.04 /angstrom)
 #   - delta_phi (HWHM) = 0.0486 deg
 #   - delta_beta (HWHM) = 0.06914 deg
 #   - reflectivity settings
+#   - virtual xrr energy = 1.44e+04 eV
+#   - virtual xrr detector distance = 1040 mm
 #   - resolution = slit, [0.33, 0.5] mm
 #   - background = phi offset, 1 mm
 #   - sample settings
@@ -60,9 +69,9 @@
 #   - temperature = 293 K
 #   - kappa = 18.74 +/- 8.26 kBT
 #   - amin = 5 angstrom
-#   call: GIXOS_background_corr(); GIXOS_qxy_dependence(); GIXOS2R(qxy0_select_idx=0,
-#     resolution_mode=1, resolution_HW=[0.33 0.5 ], bkg_mode=0, bkg_off=1.0, tension=0.028,
-#     temp=293, kappa=18.74, amin=5)
+#   call: geometrical_corr(); binning_GIXOS_tt(); th2q(); GIXOS_background_corr(); GIXOS_qxy_dependence();
+#     GIXOS2R(qxy0_select_idx=0, resolution_mode=1, resolution_HW=[0.33 0.5 ], bkg_mode=0,
+#     bkg_off=1.0, tension=0.028, temp=293, kappa=18.74, amin=5)
 # data_set: 0
 # columns:
 # - {name: Qz, unit: 1/angstrom, physical_quantity: wavevector transfer}

@@ -38,14 +38,25 @@
 #     additional_files:
 #     - '01144'
 #     scheme: angle-dispersive
+#     comment: ''
 # reduction:
 #   software: {name: '[Software(name=''pseudo_xrr'', version=None, platform=None, comment=None)]'}
 #   corrections:
+#   - rebin 2D map in angular space (pre-processed)
+#   - pixel geometrical correction (solid angle)
+#   - extract 1D GIXOS, bin phi
+#   - bin beta
+#   - angle to Q space
 #   - chamber background subtraction using 'additional_files'
 #   - 'bulk scattering background subtraction: fit wide-angle data at tth = 3.017 deg,
 #     I_bulk = 1518 + 50.68*exp(-Q/0.3691)'
 #   - fit qxy dependence to obtain kappa
+#   - qz = [0.1, 0.15] /angstrom (row [8, 13])
+#   - qxy0 range = [0.005, 0.01, 0.015, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09,
+#     0.1, 0.11, 0.12, 0.14, 0.16] /angstrom
 #   - conversion from GIXOS to pseudo-reflectivity / structure factor using GIXOS2R
+#   - beta transmission correction
+#   - footprint broadening correction, footprint = 60 mm
 #   - I0 = 2.1e+12
 #   - GIXOS diffuse scattering settings
 #   - GIXOS tth = 0.2262 deg (qxy0 = 0.03 /angstrom)
@@ -60,9 +71,9 @@
 #   - temperature = 295 K
 #   - kappa = 14.76 +/- 1.08 kBT
 #   - amin = 5 angstrom
-#   call: GIXOS_background_corr(); GIXOS_qxy_dependence(); GIXOS2R(qxy0_select_idx=4,
-#     resolution_mode=0, resolution_HW=0.0002, bkg_mode=None, bkg_off=None, tension=0.038,
-#     temp=295, kappa=14.76, amin=5)
+#   call: geometrical_corr(); extract_1dGIXOS(); binning_GIXOS_tt(); th2q(); GIXOS_background_corr();
+#     GIXOS_qxy_dependence(); GIXOS2R(qxy0_select_idx=4, resolution_mode=0, resolution_HW=0.0002,
+#     bkg_mode=None, bkg_off=None, tension=0.038, temp=295, kappa=14.76, amin=5)
 # data_set: 0
 # columns:
 # - {name: Qz, unit: 1/angstrom, physical_quantity: wavevector transfer}

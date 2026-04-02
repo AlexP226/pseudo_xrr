@@ -9,7 +9,11 @@ import platform
 from orsopy import fileio
 from orsopy.fileio import Reduction, Software, File
 
-from p08_general.P08OrsoIO import P08OrsoIO
+from xray_general_io.OrsoIO import OrsoIO
+try:
+    from p08_general.P08OrsoIO import P08OrsoIO
+except Exception:
+    P08OrsoIO = None
 
 from p08_GIXD.p08_GIXD import *
 from pseudo_xrr.helpers import *
@@ -503,7 +507,7 @@ def build_gixos2r_reduction_metadata(GIXOS, which="refl"):
     Build ORSO Reduction metadata for GIXOS2R outputs.
 
     Detailed settings are appended as extra entries in `corrections`.
-    The `call` field is kept compact and close to the actual workflow.
+    The `call` field follows the actual workflow using function names.
 
     Parameters
     ----------
@@ -521,6 +525,7 @@ def build_gixos2r_reduction_metadata(GIXOS, which="refl"):
     meta = GIXOS["metadata"]
     pr = meta.get("PseudoR", {})
     samp = meta.get("sample_params", {})
+    inst = meta.get("instrument", {})
 
     qidx = int(pr.get("qxy0_select_idx", 0))
 
@@ -558,9 +563,16 @@ def build_gixos2r_reduction_metadata(GIXOS, which="refl"):
     # reflectivity settings
     resolution_mode = pr.get("resolution_mode", None)
     resolution_hw = pr.get("resolution_HW", None)
+    virtual_energy = pr.get("energy", None)
+    virtual_ddet = pr.get("Ddet", None)
 
     if resolution_mode == 0:
         res_str = f"circular, {_fmt_optional_float(resolution_hw)} /angstrom"
+        refl_setting_lines = [
+            "reflectivity settings",
+            f"resolution = {res_str}",
+        ]
+
     elif resolution_mode == 1:
         if isinstance(resolution_hw, (list, tuple, np.ndarray)):
             res_hw_arr = np.asarray(resolution_hw).ravel()
@@ -574,8 +586,20 @@ def build_gixos2r_reduction_metadata(GIXOS, which="refl"):
                 res_str = f"slit, {_fmt_optional_float(resolution_hw)} mm"
         else:
             res_str = f"slit, {_fmt_optional_float(resolution_hw)} mm"
+
+        refl_setting_lines = [
+            "reflectivity settings",
+            f"virtual xrr energy = {_fmt_optional_float(virtual_energy)} eV",
+            f"virtual xrr detector distance = {_fmt_optional_float(virtual_ddet)} mm",
+            f"resolution = {res_str}",
+        ]
+
     else:
         res_str = "unknown"
+        refl_setting_lines = [
+            "reflectivity settings",
+            f"resolution = {res_str}",
+        ]
 
     bkg_mode = pr.get("bkg_mode", None)
     bkg_off = pr.get("bkg_off", None)
@@ -603,24 +627,106 @@ def build_gixos2r_reduction_metadata(GIXOS, which="refl"):
 
     bulk_corr_str = _build_bulkbkg_correction_text(GIXOS)
 
+    # qxy-dependence fit settings
+    qxy_fit_lines = []
+    qxy_ana = GIXOS.get("qxy_dependence_ana", None)
+
+    if kappa_is_fitted and qxy_ana is not None:
+        target_qz = np.asarray(qxy_ana.get("target_qz", []), dtype=float).ravel()
+        row_index = np.asarray(qxy_ana.get("row_index", []), dtype=int).ravel()
+
+        qxy0_meta = np.asarray(meta.get("qxy0", []), dtype=float).ravel()
+        qxy_res = np.asarray(qxy_ana.get("Qxy", []), dtype=float)
+        if qxy_res.ndim == 2 and qxy_res.shape[1] > 0:
+            ncols_fit = qxy_res.shape[1]
+        else:
+            ncols_fit = len(qxy0_meta)
+
+        qxy0_use = qxy0_meta[:ncols_fit]
+
+        qz_str = ", ".join(_fmt_optional_float(v) for v in target_qz)
+        row_str = ", ".join(str(int(v)) for v in row_index)
+        qxy0_str = ", ".join(_fmt_optional_float(v) for v in qxy0_use)
+
+        qxy_fit_lines = [
+            f"qz = [{qz_str}] /angstrom (row [{row_str}])",
+            f"qxy0 range = [{qxy0_str}] /angstrom",
+        ]
+
+    # detect earlier processing steps
+    datatype = str(meta.get("datatype", "")).lower()
+    geometrical_correction = bool(meta.get("geometrical_correction", False))
+
+    hwpx_h = float(np.asarray(GIXOS.get("HWpx_h", 0.5)).ravel()[0]) if "HWpx_h" in GIXOS else 0.5
+    hwpx_v = float(np.asarray(GIXOS.get("HWpx_v", 0.5)).ravel()[0]) if "HWpx_v" in GIXOS else 0.5
+
+    # beta transmission correction: tbeta_sqr not all ones
+    beta_transmission_done = False
+    tbeta_sqr = GIXOS.get("tbeta_sqr", None)
+    if tbeta_sqr is not None:
+        tb = np.asarray(tbeta_sqr, dtype=float)
+        if tb.size > 0 and not np.allclose(tb, 1.0, rtol=0, atol=1e-12, equal_nan=False):
+            beta_transmission_done = True
+
+    # footprint broadening correction: dQz not all nan
+    footprint_done = False
+    refl = GIXOS.get("refl", None)
+    if refl is not None:
+        refl_arr = np.asarray(refl, dtype=float)
+        if refl_arr.ndim == 2 and refl_arr.shape[1] > 3:
+            dqz = refl_arr[:, 3]
+            if np.any(np.isfinite(dqz)):
+                footprint_done = True
+
     # corrections list
-    corrections = [
+    corrections = []
+
+    # raw-data pre-processing steps
+    if datatype == "2d gixs":
+        corrections.append("rebin 2D map in angular space (pre-processed)")
+
+    if geometrical_correction:
+        corrections.append("pixel geometrical correction (solid angle)")
+
+    if datatype == "2d gixs":
+        extract_line = "extract 1D GIXOS"
+        if hwpx_h > 0.5:
+            extract_line += ", bin phi"
+        corrections.append(extract_line)
+
+    if hwpx_v > 0.5:
+        corrections.append("bin beta")
+
+    corrections.append("angle to Q space")
+
+    # background and qxy-fit
+    corrections.extend([
         "chamber background subtraction using 'additional_files'",
         bulk_corr_str,
-    ]
+    ])
 
     if kappa_is_fitted:
         corrections.append("fit qxy dependence to obtain kappa")
+        corrections.extend(qxy_fit_lines)
+
+    # GIXOS2R and later corrections
+    corrections.append("conversion from GIXOS to pseudo-reflectivity / structure factor using GIXOS2R")
+
+    if beta_transmission_done:
+        corrections.append("beta transmission correction")
+
+    if footprint_done:
+        corrections.append(
+            f"footprint broadening correction, footprint = {_fmt_optional_float(inst.get('footprint', None))} mm"
+        )
 
     corrections.extend([
-        "conversion from GIXOS to pseudo-reflectivity / structure factor using GIXOS2R",
         f"I0 = {_fmt_optional_float(meta.get('I0', None))}",
         "GIXOS diffuse scattering settings",
         f"GIXOS tth = {_fmt_optional_float(tth_val)} deg (qxy0 = {_fmt_optional_float(qxy0_val)} /angstrom)",
         f"delta_phi (HWHM) = {_fmt_optional_float(ds_phi_hw)} deg",
         f"delta_beta (HWHM) = {_fmt_optional_float(ds_beta_hw)} deg",
-        "reflectivity settings",
-        f"resolution = {res_str}",
+        *refl_setting_lines,
         f"background = {bkg_str}",
         "sample settings",
         f"Qc = {_fmt_optional_float(samp.get('Qc', None))} /angstrom",
@@ -631,9 +737,23 @@ def build_gixos2r_reduction_metadata(GIXOS, which="refl"):
     ])
 
     # compact workflow-style call
-    call_parts = ["GIXOS_background_corr()"]
+    call_parts = []
+
+    if geometrical_correction:
+        call_parts.append("geometrical_corr()")
+
+    if datatype == "2d gixs":
+        call_parts.append("extract_1dGIXOS()")
+
+    if hwpx_v > 0.5:
+        call_parts.append("binning_GIXOS_tt()")
+
+    call_parts.append("th2q()")
+    call_parts.append("GIXOS_background_corr()")
+
     if kappa_is_fitted:
         call_parts.append("GIXOS_qxy_dependence()")
+
     call_parts.append(
         "GIXOS2R("
         f"qxy0_select_idx={pr.get('qxy0_select_idx', None)}, "
@@ -657,8 +777,6 @@ def build_gixos2r_reduction_metadata(GIXOS, which="refl"):
     )
 
     return reduction
-
-
 
 def export_orso(
     GIXOS,
@@ -712,7 +830,15 @@ def export_orso(
     samp = meta.get("sample_params", {})
     meas = meta.get("measurements", {})
 
-    io = P08OrsoIO()
+    if (
+        meta.get("facility") == "PETRA III/P08"
+        and P08OrsoIO is not None
+        and ((json_path is not None) or (fio_path is not None))
+    ):
+        io = P08OrsoIO()
+    else:
+        io = OrsoIO()
+    
     # add chamber bkg file into metadata
     add_chamber_bkg_to_additional_files(io, GIXOS)
     # create reduction info for later input
@@ -720,29 +846,39 @@ def export_orso(
     # ------------------------------------------------------------
     # try loading external metadata files, but do not fail if missing
     # ------------------------------------------------------------
-    if json_path is not None and os.path.isfile(json_path):
-        try:
-            io.load_metadata_from_json(json_path)
-        except Exception as e:
-            print(f"Could not load JSON metadata: {e}")
-    else:
-        if json_path is not None:
-            print(f"JSON metadata file not found: {json_path}")
+    if hasattr(io, "load_metadata_from_json"):
+        if json_path is not None and os.path.isfile(json_path):
+            try:
+                io.load_metadata_from_json(json_path)
+            except Exception as e:
+                print(f"Could not load JSON metadata: {e}")
+        else:
+            if json_path is not None:
+                print(f"JSON metadata file not found: {json_path}")
 
-    if fio_path is not None and os.path.isfile(fio_path):
-        try:
-            io.load_metadata_from_scan(fio_path)
-        except Exception as e:
-            print(f"Could not load FIO metadata: {e}")
-    else:
-        if fio_path is not None:
-            print(f"FIO scan file not found: {fio_path}")
+    if hasattr(io, "load_metadata_from_scan"):
+        if fio_path is not None and os.path.isfile(fio_path):
+            try:
+                io.load_metadata_from_scan(fio_path)
+            except Exception as e:
+                print(f"Could not load FIO metadata: {e}")
+        else:
+            if fio_path is not None:
+                print(f"FIO scan file not found: {fio_path}")
 
     # populate what is available from P08 files
-    try:
-        io.populate_metadata_to_header()
-    except Exception:
-        pass
+    if hasattr(io, "populate_metadata_to_header"):
+        try:
+            io.populate_metadata_to_header()
+        except Exception:
+            pass
+    else:
+        # generic fallback
+        io.set_basic_header(
+            title="",
+            sample_name=meas.get("sample", ""),
+            data_type="",
+        )
 
     # ------------------------------------------------------------
     # fill/overwrite header information from runtime metadata
