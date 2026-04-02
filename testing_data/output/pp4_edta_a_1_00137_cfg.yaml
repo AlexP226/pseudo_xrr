@@ -36,10 +36,10 @@ sample_params:
   Qc: 0.0218
   tension: 0.038
   temperature: 295
-  kappa: 14.760152807743959
+  kappa: 14.76015282835274
   amin: 5
   rho_b: 9.454599394374042e-06
-  kappa_err: 1.077662611496944
+  kappa_err: 1.0776626173976254
   kappa_fit_success: true
 dependency:
   qz_selected: [0.1, 0.15]

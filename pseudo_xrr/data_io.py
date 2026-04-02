@@ -18,7 +18,6 @@ try:
 except Exception:
     P08OrsoIO = None
 
-from p08_GIXD.p08_GIXD import *
 from pseudo_xrr.helpers import *
 from pseudo_xrr.GIXOS import *
 '''
@@ -212,8 +211,27 @@ def load_data(gixosdataprefix, path, metadata = None, datatype = "2d gixs"):
         by p08_GIXD.read_2D a dictionary of 'mat', 'tth', 'tt' is created
         '''
         print("load 2d image")
-        importeddata = read_2D(gixosdataprefix, path, axis = ['tth', 'tt'])
-        importeddata['Intensity'] = importeddata.pop('mat')
+        
+        # create dictionary for the data
+        importeddata = {"tth": [], "tt": [], 'Intensity': []}
+        
+        # load files    
+        file_intensity = path+gixosdataprefix+"_I.dat"
+        file_xaxis = path+gixosdataprefix+"_tth.dat"
+        file_yaxis = path+gixosdataprefix+"_tt.dat"
+        importeddata['Intensity'] = np.loadtxt(file_intensity)
+        importeddata['tth'] = np.loadtxt(file_xaxis, ndmin = 2)
+            
+        tt_tmp =  np.loadtxt(file_yaxis)
+        if importeddata["tth"].shape[0]>1 and tt_tmp.ndim==1:
+            importeddata["tt"] = np.zeros([importeddata['Intensity'].shape[0],importeddata['Intensity'].shape[1]])
+            for i in range(importeddata["tt"].shape[1]):
+                importeddata["tt"][:,i] = tt_tmp
+        else:
+            importeddata["tt"]=tt_tmp
+        del tt_tmp
+        
+        # other derived quantity for GIXOS
         importeddata["HWtth"] = mean1d_if_within_percent(np.diff(importeddata["tth"], axis = 1)/2)
         importeddata["HWpx_h"] = .5
         importeddata["HWtt"] = mean1d_if_within_percent(np.diff(importeddata["tt"], axis = 0)/2)

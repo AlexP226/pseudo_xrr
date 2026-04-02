@@ -1,13 +1,5 @@
 import numpy as np
-import matplotlib.pyplot as plt
-
 import math
-#import os
-#import platform
-#from joblib import Parallel, delayed
-#from scipy.integrate import dblquad
-#from scipy.special import kv as besselk, jv as besselj, gamma
-from p08_GIXD.p08_GIXD import *
 from pseudo_xrr.helpers import *
 from pseudo_xrr.eCWM import *
 from pseudo_xrr.bulkbkg import *
@@ -81,7 +73,7 @@ def geometrical_corr(gixs2d, Ddet = 560.7, det_px = 0.075, HWtth = None, HWtt = 
     gixs2d["error"] = np.sqrt(gixs2d["Intensity"])
     return gixs2d
 
-def GIXOS_th2q(inputdata):
+def GIXOS_th2q(GIXOS):
     """
     create q axises from the angular axises
     Parameters
@@ -102,22 +94,72 @@ def GIXOS_th2q(inputdata):
             'Q':    (1/A)
 
     """
-    outputdata = None
-    if (inputdata["metadata"] is None) or ("instrument" not in inputdata["metadata"]) or (inputdata["metadata"]["instrument"] is None) or (not check_keys_numeric(["energy", "alpha"], inputdata["metadata"]["instrument"])):
+    
+    if (GIXOS["metadata"] is None) or ("instrument" not in GIXOS["metadata"]) or (GIXOS["metadata"]["instrument"] is None) or (not check_keys_numeric(["energy", "alpha"], GIXOS["metadata"]["instrument"])):
         print("please provide energy [eV] and incident angle (alpha) [deg] in the ['metadata']['instrument']")
         return
+    
+    # constant preparation
+    energy = GIXOS["metadata"]["instrument"]["energy"]
+    alpha = GIXOS["metadata"]["instrument"]["alpha"]
+    
+    wv = 12400.0 / energy
+    k_i = 2*pi/wv
         
-    inputdata['mat'] = inputdata.pop('Intensity')    
-    # calculate qxy, qz, and q, use the th2q function from p08_GIXD, it requires the intensity to be called mat
-    outputdata = th2q(inputdata, energy = inputdata["metadata"]["instrument"]["energy"], alpha_i = inputdata["metadata"]["instrument"]["alpha"], absQxy = False)
-    outputdata["Q"] = np.sqrt(outputdata["Qxy"]**2 + outputdata["Qz"]**2)
-    for key in inputdata.keys(): 
-        if key not in ['mat', 'Qxy', 'Qz', 'Q']:
-            outputdata[key] = inputdata[key]
-    # swap back the key to intensity
-    inputdata['Intensity'] = inputdata.pop('mat')
-    outputdata['Intensity'] = outputdata.pop('mat')
-    return outputdata
+    # Qz matrix and Qxy matrix
+    GIXOS['Qz'] = np.zeros([GIXOS['Intensity'].shape[0],GIXOS['Intensity'].shape[1]])
+    GIXOS['Qxy'] = np.zeros([GIXOS['Intensity'].shape[0],GIXOS['Intensity'].shape[1]])
+    
+    if GIXOS['tt'].ndim ==1:
+        for i in range(GIXOS['Qxy'].shape[1]):
+            GIXOS['Qz'][:,i] = k_i * (np.sin(np.radians(GIXOS['tt'])) + np.sin(np.radians(alpha)))
+            GIXOS['Qxy'][:,i] = k_i * np.sqrt((np.cos(np.radians(alpha)))**2+(np.cos(np.radians(GIXOS['tt'])))**2 - 2*np.cos(np.radians(alpha))*np.cos(np.radians(GIXOS['tt']))*np.cos(np.radians(GIXOS['tth'][0,i]))) * ((GIXOS['tth'][0,i] >0)/0.5-1)
+    else:
+        GIXOS['Qz'] = k_i * (np.sin(np.radians(GIXOS['tt'])) + np.sin(np.radians(alpha)))
+        GIXOS['Qxy'] = k_i * np.sqrt((np.cos(np.radians(alpha)))**2+(np.cos(np.radians(GIXOS['tt'])))**2 - 2*np.cos(np.radians(alpha))*np.cos(np.radians(GIXOS['tt']))*np.cos(np.radians(GIXOS['tth']))) * ((GIXOS['tth'] >0)/0.5-1)
+
+    GIXOS["Q"] = np.sqrt(GIXOS["Qxy"]**2 + GIXOS["Qz"]**2)
+    
+    return GIXOS
+
+
+# def GIXOS_th2q_old(inputdata):
+#     """
+#     create q axises from the angular axises
+#     Parameters
+#     ----------
+#     inputdata : dictionary
+#         required fields:
+#             'Intensity':    intensity map, 2d or one line cut,
+#             'tth':          tth axis in deg, 
+#             'tt':           tt axis in deg, 
+#             'metadata':     ['instrument'] with 'energy' (eV) and 'alpha' (deg)
+#     Returns
+#     -------
+#     outputdata : dictionary
+#         same field of inputdata
+#         additional fields:
+#             'Qxy':  (1/A)
+#             'Qz':   (1/A)
+#             'Q':    (1/A)
+
+#     """
+#     outputdata = None
+#     if (inputdata["metadata"] is None) or ("instrument" not in inputdata["metadata"]) or (inputdata["metadata"]["instrument"] is None) or (not check_keys_numeric(["energy", "alpha"], inputdata["metadata"]["instrument"])):
+#         print("please provide energy [eV] and incident angle (alpha) [deg] in the ['metadata']['instrument']")
+#         return
+        
+#     inputdata['mat'] = inputdata.pop('Intensity')    
+#     # calculate qxy, qz, and q, use the th2q function from p08_GIXD, it requires the intensity to be called mat
+#     outputdata = th2q(inputdata, energy = inputdata["metadata"]["instrument"]["energy"], alpha_i = inputdata["metadata"]["instrument"]["alpha"], absQxy = False)
+#     outputdata["Q"] = np.sqrt(outputdata["Qxy"]**2 + outputdata["Qz"]**2)
+#     for key in inputdata.keys(): 
+#         if key not in ['mat', 'Qxy', 'Qz', 'Q']:
+#             outputdata[key] = inputdata[key]
+#     # swap back the key to intensity
+#     inputdata['Intensity'] = inputdata.pop('mat')
+#     outputdata['Intensity'] = outputdata.pop('mat')
+#     return outputdata
 
 def extract_1dGIXOS(gixs2d, tth_array, HWpx_h = 5):
     """
