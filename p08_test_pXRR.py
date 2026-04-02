@@ -61,7 +61,6 @@ _ = GIXOS2R(GIXOS_ana, transmission_corr = True, footprint_effect=True, use_appr
 configfilename = make_filename(GIXOS_ana["metadata"], suffix="cfg.yaml")
 save_metadata_yaml(GIXOS_ana["metadata"], configfilename)
 
-
 #%% ------export orso -----------------
 jsonfilename = "U:/p08/2023/data/11016139/beamtime-metadata-11016139.json"
 fiofilename = "U:/p08/2023/data/11016139/raw/pp4_edta_a_1_00137.fio"

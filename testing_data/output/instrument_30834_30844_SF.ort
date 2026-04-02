@@ -25,10 +25,9 @@
 #       polarization: []
 #       configuration: ''
 #       comment: ''
-#       sample_detector_distance: []
-#       roi_specular: {x: 0.33, y: 0.5, z: 0.0, unit: mm, definition: HWHM, configuration: rectangular
-#           vxh, orientation_normal: beta}
-#       roi_bkg_offspec: {magnitude: 1.0, unit: mm, use: true}
+#       sample_detector_distance: {magnitude: 710.0, unit: mm, comment: GIXOS/GIXS detector}
+#       roi_specular: []
+#       roi_bkg_offspec: []
 #     data_files:
 #     - file: '[''30834'' ''30836'' ''30838'' ''30840'' ''30842'' ''30844'']'
 #     additional_files:

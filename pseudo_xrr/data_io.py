@@ -780,6 +780,14 @@ def export_orso(
             inst["wavelength"], unit="angstrom"
         )
 
+    # sample-detector distance for the real GIXOS/GIXS detector
+    if "Ddet" in inst and inst["Ddet"] is not None:
+        io.header.DataSource.instrument_settings["sample_detector_distance"] = fileio.base.Value(
+            float(inst["Ddet"]),
+            unit="mm",
+            comment="GIXOS/GIXS detector"
+        )
+
     # scan ids -> measurement data_files
     if scan_val is not None:
         scan_arr = np.asarray(scan_val).ravel()
@@ -787,16 +795,19 @@ def export_orso(
 
     # ------------------------------------------------------------
     # resolution / ROI metadata from PseudoR
+    # only populate these for reflectivity export
     # ------------------------------------------------------------
-    if which in ("refl", "SF"):
+    if which == "refl":
+        # reflectivity resolution metadata
         if pr.get("resolution_mode", None) == 0:
             io.header.DataSource.instrument_settings["roi_specular"] = fileio.base.Value(
-                pr["resolution_HW"], unit="1/angstrom"
+                float(pr["resolution_HW"]),
+                unit="1/angstrom"
             )
             io.header.DataSource.instrument_settings["roi_specular"].definition = "HWHM"
             io.header.DataSource.instrument_settings["roi_specular"].configuration = "circular"
             io.header.DataSource.instrument_settings["roi_specular"].orientation_normal = "Qxy"
-
+    
         elif pr.get("resolution_mode", None) == 1:
             res_hw = np.asarray(pr["resolution_HW"], dtype=float).ravel()
             io.header.DataSource.instrument_settings["roi_specular"] = fileio.base.ValueVector(
@@ -805,12 +816,37 @@ def export_orso(
             io.header.DataSource.instrument_settings["roi_specular"].definition = "HWHM"
             io.header.DataSource.instrument_settings["roi_specular"].configuration = "rectangular vxh"
             io.header.DataSource.instrument_settings["roi_specular"].orientation_normal = "beta"
-
+    
+            # pseudo-XRR slit mode uses virtual XRR settings
+            virtual_energy = pr.get("energy", None)
+            virtual_ddet = pr.get("Ddet", None)
+            io.header.DataSource.instrument_settings["roi_specular"].comment = (
+                f"virtual xrr energy: {virtual_energy} eV, "
+                f"xrr detector distance: {virtual_ddet} mm"
+            )
+    
+        # off-spec background metadata for reflectivity export only
         if pr.get("bkg_mode", None) is not None and pr.get("bkg_off", None) is not None:
+            if pr["bkg_mode"] == 0:
+                bkg_comment = "phi off"
+            elif pr["bkg_mode"] == 1:
+                bkg_comment = "beta off"
+            else:
+                bkg_comment = ""
+    
             io.header.DataSource.instrument_settings["roi_bkg_offspec"] = fileio.base.Value(
-                pr["bkg_off"], unit="mm"
+                float(pr["bkg_off"]),
+                unit="mm",
+                comment=bkg_comment
             )
             io.header.DataSource.instrument_settings["roi_bkg_offspec"].use = True
+    
+        else:
+            io.header.DataSource.instrument_settings["roi_bkg_offspec"] = fileio.base.Value(
+                [], unit="mm"
+            )
+            io.header.DataSource.instrument_settings["roi_bkg_offspec"].use = False
+
 
     # ------------------------------------------------------------
     # choose dataset + ORSO column descriptions

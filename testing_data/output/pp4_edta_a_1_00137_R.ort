@@ -29,10 +29,10 @@
 #         surface (doi:10.1088/1742-6596/2380/1/012047), GIXOS/pseudoXRR (doi: 10.1107/S1600576724002887;
 #         10.1103/znt1-fmx6)'
 #       comment: ''
-#       sample_detector_distance: {magnitude: [], unit: unknown}
+#       sample_detector_distance: {magnitude: 560.7, unit: mm, comment: GIXOS/GIXS detector}
 #       roi_specular: {magnitude: 0.0002, unit: 1/angstrom, definition: HWHM, configuration: circular,
 #         orientation_normal: Qxy}
-#       roi_bkg_offspec: {magnitude: [], unit: unknown, comment: ''}
+#       roi_bkg_offspec: {magnitude: [], unit: mm, use: false}
 #     data_files:
 #     - file: '[''00137'']'
 #     additional_files:
